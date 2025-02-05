@@ -1,23 +1,23 @@
 "use client";
-
 // app/page.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FaSun, FaMoon } from 'react-icons/fa'; // Importing icons for theme toggle
+import {useTheme} from 'next-themes';
+import { ThemeSwitch } from './components/theme/theme-switch';
 
 const HomePage = () => {
+  const { theme, setTheme } = useTheme();
   // State to manage the theme (light or dark)
-  const [darkMode, setDarkMode] = useState(false);
-
-  // Toggle theme between light and dark
-  const toggleTheme = () => {
-    setDarkMode(!darkMode);
-  };
+  useEffect(() => {
+    // Enforce light theme on the first load by setting theme explicitly
+    setTheme('light');
+    // setIsFirstLoad(false); // Set to false after first load
+  }, []);
+ 
 
   return (
     <div
-      className={`min-h-screen bg-gradient-to-r from-blue-200 via-indigo-200 to-purple-300 flex items-center justify-between px-8 relative transition-all ${
-        darkMode ? 'bg-gray-800 text-white' : 'bg-gradient-to-r from-blue-200 via-indigo-200 to-purple-300'
-      }`}
+      className={`min-h-screen bg-gradient-to-r from-blue-200 via-indigo-200 to-purple-300 flex items-center justify-between px-8 relative transition-all`}
     >
       <div className="flex-1 flex items-center justify-center relative">
         {/* LOBO with gradient color */}
@@ -35,23 +35,12 @@ const HomePage = () => {
       <div className="absolute right-8 top-8 flex flex-col items-end space-y-4">
         <div className="flex items-center space-x-4">
           {/* Theme Toggle Icon */}
-          <button onClick={toggleTheme} className="text-2xl p-2 rounded-full transition duration-300 hover:bg-gray-200">
-            {darkMode ? (
-              <FaSun className="text-yellow-500" />
-            ) : (
-              <FaMoon className="text-gray-800" />
-            )}
+          <button
+            className="text-2xl p-2 rounded-full transition duration-300 hover:bg-gray-200"
+          >
           </button>
           
           {/* Contact Us Button */}
-          <div>
-            <a
-              href="#contact"
-              className="px-6 py-3 text-blue-600 border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition duration-300"
-            >
-              Contact Us
-            </a>
-          </div>
         </div>
       </div>
     </div>
