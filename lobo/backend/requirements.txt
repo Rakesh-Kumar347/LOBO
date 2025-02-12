@@ -1,0 +1,41 @@
+# Core Flask & API Libraries
+flask
+flask-jwt-extended
+flask-cors
+fastapi[all]  # Includes uvicorn
+
+# LangChain & AI Processing
+langchain
+langchain_core
+langchain_community
+langchain_huggingface
+langchain_ollama
+sentence-transformers
+
+# Ollama for LLMs
+ollama
+
+# Vector Databases & Embeddings
+faiss-cpu
+huggingface-hub
+
+# MongoDB Driver
+pymongo[srv]
+
+# PDF, DOCX, Excel, PPT Processing
+pymupdf
+pypdf
+python-docx
+openpyxl
+python-pptx
+pyperclip
+
+# Machine Learning & Data Science
+numpy
+pandas
+torch
+torchvision
+torchaudio
+
+# Environment Variables
+python-dotenv

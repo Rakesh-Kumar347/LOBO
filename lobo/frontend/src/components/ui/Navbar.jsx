@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthProvider";
+import { useAuth } from "@/context/AuthProvider"; // ✅ Import useAuth
 import { supabase } from "@/lib/supabase";
 import { UserCircle, Sun, Moon } from "lucide-react";
 
 export default function Navbar({ darkMode, toggleDarkMode }) {
-  const { session } = useAuth();
+  const { session } = useAuth(); // ✅ Get session state
   const [showMenu, setShowMenu] = useState(false);
   const router = useRouter();
 

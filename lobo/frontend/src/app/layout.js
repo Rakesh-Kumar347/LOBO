@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AuthProvider } from "@/context/AuthProvider"; // ✅ Import the AuthProvider
+import { AuthProvider } from "@/context/AuthProvider"; // ✅ Only import AuthProvider
 import Navbar from "@/components/ui/Navbar"; // ✅ Import the Navbar
 import "./globals.css"; // ✅ Import global styles
 
