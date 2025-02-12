@@ -1,41 +1,15 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { createContext, useContext } from "react";
 
 // ✅ Create Auth Context
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
 
-// ✅ Provider Component
-export const AuthProvider = ({ children }) => {
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchSession() {
-      const { data } = await supabase.auth.getSession();
-      setSession(data?.session || null);
-      setLoading(false);
-    }
-
-    fetchSession();
-
-    // ✅ Listen for auth state changes and update instantly
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session); // This ensures the session updates immediately
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
-
-  return (
-    <AuthContext.Provider value={{ session, loading }}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
+// ✅ Custom Hook to Access Auth Context
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
 };
-
-// ✅ Custom hook to use Auth Context
-export const useAuth = () => useContext(AuthContext);

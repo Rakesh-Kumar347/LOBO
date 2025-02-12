@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AuthProvider } from "@/context/AuthContext";
-import Navbar from "@/components/ui/Navbar"; // ✅ Import Navbar
-import "./globals.css";
+import { AuthProvider } from "@/context/AuthProvider"; // ✅ Import the AuthProvider
+import Navbar from "@/components/ui/Navbar"; // ✅ Import the Navbar
+import "./globals.css"; // ✅ Import global styles
 
 export default function RootLayout({ children }) {
   const [darkMode, setDarkMode] = useState(false);
@@ -27,8 +27,11 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={darkMode ? "dark bg-gray-900 text-white" : "bg-white text-gray-900"}>
         <AuthProvider>
-          <Navbar darkMode={darkMode} toggleDarkMode={toggleDarkMode} /> {/* ✅ Pass theme props */}
-          {children}
+          {/* ✅ Navbar with dark mode toggle */}
+          <Navbar darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
+          
+          {/* ✅ Main Application Content */}
+          <main>{children}</main>
         </AuthProvider>
       </body>
     </html>
