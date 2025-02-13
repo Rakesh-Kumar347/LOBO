@@ -4,9 +4,6 @@ import datetime
 
 auth_bp = Blueprint("auth", __name__)
 
-# Mock user database
-users = {"testuser": "password123"}
-
 # ✅ Login Route
 @auth_bp.route("/login", methods=["POST"])
 def login():
@@ -14,8 +11,11 @@ def login():
     username = data.get("username")
     password = data.get("password")
 
+    # Replace with a database call
+    users = {"testuser": "password123"}
+
     if username in users and users[username] == password:
-        access_token = create_access_token(identity=username)
+        access_token = create_access_token(identity=username, expires_delta=datetime.timedelta(minutes=30))
         return jsonify(access_token=access_token), 200
     return jsonify({"error": "Invalid credentials"}), 401
 

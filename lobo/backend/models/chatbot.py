@@ -9,4 +9,8 @@ class Chatbot:
 
     def generate_response(self, prompt: str) -> str:
         """Generates a response from the AI model."""
-        return self.llm.invoke(prompt)
+        try:
+            response = self.llm.invoke(prompt)
+            return response
+        except Exception as e:
+            return f"Error generating response: {str(e)}"
