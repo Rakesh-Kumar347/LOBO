@@ -1,10 +1,5 @@
-export default function Head() {
-    return (
-      <>
-        <title>LOBO - Local Bot</title>
-        <meta name="description" content="AI-powered local bot for multiple tasks" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-      </>
-    );
-  }
-  
+export const metadata = {
+  title: "LOBO - Local Bot",
+  description: "AI-powered local bot for multiple tasks",
+  viewport: "width=device-width, initial-scale=1",
+};

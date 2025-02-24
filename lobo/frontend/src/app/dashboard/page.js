@@ -8,17 +8,17 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const router = useRouter();
 
-  useEffect(() => {
-    async function fetchUser() {
-      const { data, error } = await supabase.auth.getUser();
-      if (error || !data?.user) {
-        router.push("/signin"); // Redirect to sign-in if not logged in
-      } else {
-        setUser(data.user);
-      }
-    }
-    fetchUser();
-  }, []);
+  // useEffect(() => {
+  //   async function fetchUser() {
+  //     const { data, error } = await supabase.auth.getUser();
+  //     if (error || !data?.user) {
+  //       router.push("/signin"); // Redirect to sign-in if not logged in
+  //     } else {
+  //       setUser(data.user);
+  //     }
+  //   }
+  //   fetchUser();
+  // }, []);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">

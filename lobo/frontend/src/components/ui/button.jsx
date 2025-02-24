@@ -3,6 +3,9 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
+/**
+ * Defines button variants and sizes using class-variance-authority (CVA).
+ */
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
@@ -29,13 +32,25 @@ const buttonVariants = cva(
   }
 );
 
+/**
+ * A reusable button component with variants, sizes, and accessibility support.
+ *
+ * @param {object} props - Button properties
+ * @param {string} [props.variant="default"] - Button variant (default, destructive, outline, etc.)
+ * @param {string} [props.size="default"] - Button size (default, sm, lg, icon)
+ * @param {boolean} [props.asChild=false] - Whether the button should act as a child wrapper
+ * @param {string} [props.ariaLabel] - ARIA label for accessibility
+ * @param {React.Ref} ref - React ref forwarding
+ * @returns {JSX.Element} - Button component
+ */
 const Button = React.forwardRef(({ className, variant, size, asChild = false, ariaLabel, ...props }, ref) => {
   const Comp = asChild ? Slot : "button";
   return (
     <Comp
       className={cn(buttonVariants({ variant, size, className }))}
       ref={ref}
-      aria-label={ariaLabel}
+      aria-label={ariaLabel || "button"} // Default ARIA label if not provided
+      role="button"
       {...props}
     />
   );

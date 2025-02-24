@@ -1,8 +1,11 @@
+/* Import Google Fonts (must be the first line) */
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Default font */
+/* Default Font */
 body {
   font-family: "Poppins", sans-serif;
 }
@@ -19,25 +22,60 @@ body {
     --accent: 220 60% 55%;
     --accent-foreground: 0 0% 98%;
     --border: 230 15% 85%;
+    --shadow: 240 10% 80%;
   }
 
   /* Dark Mode Colors */
   .dark {
-    --background: 240 10% 16%;
+    --background: 240 10% 12%;
     --foreground: 0 0% 98%;
     --primary: 260 90% 75%;
     --secondary: 34 78% 55%;
-    --accent: 220 60% 65%;
-    --border: 230 15% 35%;
+    --accent: 220 60% 72%;
+    --border: 230 15% 40%;
+    --shadow: 240 10% 20%;
   }
 }
 
-/* Apply background and text colors */
+/* Apply global styles */
 @layer base {
+  /* Reset */
   * {
-    @apply border-border;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    @apply border-border transition-all duration-200 ease-in-out;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /* Focus styles */
+  *:focus {
+    @apply outline-none ring-2 ring-primary;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Default container for better spacing */
+  .container {
+    @apply mx-auto px-4 sm:px-6 lg:px-8;
+  }
+}
+
+/* Custom Utilities */
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+  }
+
+  @variants responsive {
+    .custom-breakpoint {
+      @apply max-w-[1200px] mx-auto px-4;
+    }
   }
 }

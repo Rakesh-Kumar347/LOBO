@@ -1,60 +1,65 @@
-import { createContext, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+"use client";
 
-// Create Auth Context
+import { createContext, useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+
 export const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const router = useRouter();
+  const [user, setUser] = useState(null);
+  const router = useRouter();
 
-    useEffect(() => {
-        const checkSession = async () => {
-            const token = localStorage.getItem("token");
-            if (!token) {
-                logout();
-                return;
-            }
+  /**
+   * Fetch the current user session from Supabase.
+   */
+  const fetchUserSession = useCallback(async () => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error("❌ Error fetching session:", error.message);
+    }
+    setUser(data?.session?.user || null);
+  }, []);
 
-            try {
-                const response = await fetch("http://127.0.0.1:5000/api/auth/check-session", {
-                    method: "GET",
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+  /**
+   * Listen for authentication state changes.
+   */
+  useEffect(() => {
+    fetchUserSession();
 
-                if (response.ok) {
-                    const data = await response.json();
-                    setUser(data.user);
-                } else {
-                    logout();
-                }
-            } catch (error) {
-                console.error("Session check failed", error);
-                logout();
-            }
-        };
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
 
-        checkSession();
-        const interval = setInterval(checkSession, 1 * 60 * 1000); // 🔄 Check every 5 minutes
-
-        return () => clearInterval(interval);
-    }, []);
-
-    const login = (token) => {
-        localStorage.setItem("token", token);
-        setUser("authenticated");
-        router.push("/dashboard");
+    return () => {
+      authListener?.subscription.unsubscribe();
     };
+  }, [fetchUserSession]);
 
-    const logout = () => {
-        localStorage.removeItem("token");
-        setUser(null);
-        router.push("/signin");
-    };
+  /**
+   * Login function using Supabase.
+   */
+  const login = async (email, password) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    return (
-        <AuthContext.Provider value={{ user, login, logout }}>
-            {children}
-        </AuthContext.Provider>
-    );
+    if (error) {
+      console.error("❌ Login failed:", error.message);
+      return { success: false, message: error.message };
+    }
+
+    await fetchUserSession();
+    router.push("/");
+    return { success: true, message: "Login successful!" };
+  };
+
+  /**
+   * Logout function.
+   */
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    router.push("/signin");
+  };
+
+  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
 }

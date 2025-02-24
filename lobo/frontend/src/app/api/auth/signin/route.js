@@ -1,31 +1,40 @@
+import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-export async function POST(req) {
+export async function POST(request) {
   try {
-    const { email, password } = await req.json();
+    const { email, password } = await request.json();
 
-    // Sign in with email and password
+    // Validate input
+    if (!email || !password) {
+      return NextResponse.json(
+        { success: false, message: "Email and password are required." },
+        { status: 400 }
+      );
+    }
+
+    // Sign in with Supabase
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      console.error("Sign-in Error:", error.message);
-      return Response.json({ error: error.message }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: error.message },
+        { status: 401 }
+      );
     }
 
-    // ✅ Fetch session to store it in Supabase auth cookies
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) {
-      console.error("Session Error:", sessionError.message);
-      return Response.json({ error: "Failed to retrieve session" }, { status: 500 });
-    }
-
-    return Response.json({ message: "Sign-in successful!", session: sessionData }, { status: 200 });
-
-  } catch (err) {
-    console.error("Server Error:", err.message);
-    return Response.json({ error: "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { success: true, message: "Sign-in successful!", user: data.user },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Sign-in error:", error);
+    return NextResponse.json(
+      { success: false, message: "An internal error occurred." },
+      { status: 500 }
+    );
   }
 }
