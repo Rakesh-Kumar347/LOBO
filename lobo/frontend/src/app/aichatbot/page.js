@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Menu, Send, Edit2, ChevronLeft, ChevronRight, X, Copy, Square } from "lucide-react";
+import { Menu, Send, Edit2, ChevronLeft, ChevronRight, X, Copy, Square, RefreshCw } from "lucide-react";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -17,16 +17,17 @@ export default function AIChatbot() {
   const [assistantMessageIndex, setAssistantMessageIndex] = useState(null);
   const [currentBranchIndex, setCurrentBranchIndex] = useState({});
   const [messageBranches, setMessageBranches] = useState({});
+  const [regeneratedResponses, setRegeneratedResponses] = useState({}); // { userInputContent: [response1, response2, ...] }
+  const [currentRegenIndex, setCurrentRegenIndex] = useState({}); // { userInputContent: currentIndex }
+  const [responseBranches, setResponseBranches] = useState({}); // { userInputContent-responseIndex: [subsequentMessages] }
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Function to adjust textarea height
   const adjustTextareaHeight = () => {
     if (inputRef.current) {
       const minHeight = 40;
       const maxHeight = 160;
-      // Reset height to auto first to properly calculate scrollHeight
       inputRef.current.style.height = "auto";
       const scrollHeight = inputRef.current.scrollHeight;
       inputRef.current.style.height = `${Math.min(Math.max(scrollHeight, minHeight), maxHeight)}px`;
@@ -61,12 +62,27 @@ export default function AIChatbot() {
           updated[assistantMessageIndex] = { role: "assistant", content: fullResponseText };
           return updated;
         });
+        const userInput = messages[assistantMessageIndex - 1]?.content;
+        if (userInput) {
+          setRegeneratedResponses(prev => {
+            const existingResponses = prev[userInput] || [];
+            const newResponses = [...existingResponses, fullResponseText];
+            return {
+              ...prev,
+              [userInput]: newResponses
+            };
+          });
+          setCurrentRegenIndex(prev => ({
+            ...prev,
+            [userInput]: (prev[userInput] !== undefined ? prev[userInput] : -1) + 1
+          }));
+        }
         setFullResponseText("");
         setCurrentTypingText("");
         setAssistantMessageIndex(null);
       }
     }
-  }, [isTyping, fullResponseText, currentTypingText, typingSpeed, assistantMessageIndex]);
+  }, [isTyping, fullResponseText, currentTypingText, typingSpeed, assistantMessageIndex, messages]);
 
   const handleEdit = (index) => {
     setEditingIndex(index);
@@ -149,7 +165,20 @@ export default function AIChatbot() {
       updatedMessages = updatedMessages.slice(0, index + 1);
       branchIndex = index;
     } else {
-      updatedMessages.push({ role: "user", content: messageText });
+      const lastAssistantIndex = updatedMessages.length - 1;
+      if (updatedMessages.length > 1 && updatedMessages[lastAssistantIndex]?.role === "assistant") {
+        const userInput = updatedMessages[lastAssistantIndex - 1].content;
+        const regenIndex = currentRegenIndex[userInput] || 0;
+        const branchKey = `${userInput}-${regenIndex}`;
+        
+        updatedMessages.push({ role: "user", content: messageText });
+        setResponseBranches(prev => ({
+          ...prev,
+          [branchKey]: [...(prev[branchKey] || []), { role: "user", content: messageText }]
+        }));
+      } else {
+        updatedMessages.push({ role: "user", content: messageText });
+      }
       branchIndex = updatedMessages.length - 1;
     }
 
@@ -158,13 +187,7 @@ export default function AIChatbot() {
     try {
       setIsTyping(true);
       setInputText("");
-      
-      // After clearing text, we need to reset the height
-      // This will be handled by the useEffect that monitors inputText
-      // but we can force an immediate update
-      setTimeout(() => {
-        adjustTextareaHeight();
-      }, 0);
+      setTimeout(() => adjustTextareaHeight(), 0);
 
       const assistantMessage = { role: "assistant", content: "" };
       const newMessages = [...updatedMessages, assistantMessage];
@@ -197,6 +220,89 @@ export default function AIChatbot() {
 
     setEditingIndex(null);
     setEditedText("");
+  };
+
+  const regenerateResponse = async (index) => {
+    if (isTyping) return;
+
+    const userMessageIndex = index - 1;
+    if (userMessageIndex < 0 || messages[userMessageIndex]?.role !== "user") return;
+
+    const userMessage = messages[userMessageIndex].content;
+
+    try {
+      setIsTyping(true);
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[index] = { role: "assistant", content: "" };
+        return updated;
+      });
+      setAssistantMessageIndex(index);
+      setCurrentTypingText("");
+
+      const response = await fetch("http://127.0.0.1:5000/api/chatbot/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          message: userMessage,
+          regenerate: true 
+        }),
+      });
+      
+      if (!response.ok) throw new Error("Failed to regenerate response");
+      const data = await response.json();
+      
+      setFullResponseText(data.response);
+      
+    } catch (error) {
+      console.error(error);
+      setIsTyping(false);
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[index] = {
+          role: "assistant",
+          content: "Sorry, I couldn't regenerate the response at the moment."
+        };
+        return updated;
+      });
+      setAssistantMessageIndex(null);
+    }
+  };
+
+  const navigateRegeneratedResponse = (index, direction) => {
+    const userInput = messages[index - 1]?.content;
+    if (!userInput) return;
+
+    const responses = regeneratedResponses[userInput] || [messages[index].content];
+    const currentIndex = currentRegenIndex[userInput] !== undefined ? currentRegenIndex[userInput] : responses.length - 1;
+    const newIndex = currentIndex + direction;
+
+    if (newIndex >= 0 && newIndex < responses.length) {
+      // Save the current branch before switching
+      const currentBranchKey = `${userInput}-${currentIndex}`;
+      const subsequentMessages = messages.slice(index + 1);
+      if (subsequentMessages.length > 0) {
+        setResponseBranches(prev => ({
+          ...prev,
+          [currentBranchKey]: subsequentMessages
+        }));
+      }
+
+      // Restore the new branch
+      const newBranchKey = `${userInput}-${newIndex}`;
+      const newBranchMessages = responseBranches[newBranchKey] || [];
+
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[index] = { role: "assistant", content: responses[newIndex] };
+        return [...updated.slice(0, index + 1), ...newBranchMessages];
+      });
+
+      setCurrentRegenIndex(prev => ({
+        ...prev,
+        [userInput]: newIndex
+      }));
+    }
   };
 
   const parseResponse = (response) => {
@@ -274,6 +380,10 @@ export default function AIChatbot() {
         msg.role === "assistant" && isTyping && assistantMessageIndex === index
           ? currentTypingText
           : msg.content;
+
+      const userInput = msg.role === "assistant" ? messages[index - 1]?.content : null;
+      const regenResponses = userInput ? (regeneratedResponses[userInput] || [msg.content]) : [msg.content];
+      const regenIndex = userInput ? (currentRegenIndex[userInput] !== undefined ? currentRegenIndex[userInput] : 0) : 0;
 
       return (
         <div key={index} className={`flex flex-col mb-6 ${msg.role === "user" ? "items-end" : "items-start"}`}>
@@ -407,6 +517,31 @@ export default function AIChatbot() {
               >
                 <Copy size={18} />
               </button>
+              <button
+                onClick={() => regenerateResponse(index)}
+                className="text-green-500 hover:text-green-700 transition"
+                title="Regenerate response"
+              >
+                <RefreshCw size={18} />
+              </button>
+              {regenResponses.length > 1 && (
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => navigateRegeneratedResponse(index, -1)}
+                    disabled={regenIndex === 0}
+                    className="p-1 bg-gray-300 dark:bg-gray-600 rounded-full disabled:opacity-50"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    onClick={() => navigateRegeneratedResponse(index, 1)}
+                    disabled={regenIndex === regenResponses.length - 1}
+                    className="p-1 bg-gray-300 dark:bg-gray-600 rounded-full disabled:opacity-50"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
