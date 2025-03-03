@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { toast } from "react-toastify"; // Import toast
 
 export default function SignUpPage() {
   const [formData, setFormData] = useState({
@@ -11,21 +12,30 @@ export default function SignUpPage() {
     password: "",
     full_name: "",
   });
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const validateForm = () => {
+    if (!formData.email.includes("@") || formData.password.length < 6) {
+      toast.error("Please enter a valid email and a password with at least 6 characters.");
+      return false;
+    }
+    if (!formData.full_name.trim()) {
+      toast.error("Full name is required.");
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    if (!validateForm()) return;
+
     setLoading(true);
 
     try {
@@ -38,12 +48,15 @@ export default function SignUpPage() {
       const data = await response.json();
 
       if (!data.success) {
-        setError(data.message);
+        toast.error(data.message || "Sign-up failed. Please try again.");
       } else {
-        router.push("/signin");
+        toast.success("Sign-up successful!");
+        setTimeout(() => {
+          router.push("/signin");
+        }, 2000); // Redirect after 2 seconds
       }
     } catch (err) {
-      setError("An error occurred during sign-up.");
+      toast.error("An unexpected error occurred. Please try again later.");
     } finally {
       setLoading(false);
     }
@@ -55,12 +68,8 @@ export default function SignUpPage() {
         <h1 className="text-3xl font-bold text-center mb-6 text-[#5A189A] dark:text-white">
           Sign Up
         </h1>
-        {error && (
-          <div className="mb-4 p-2 bg-red-100 text-red-700 rounded text-center">
-            {error}
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-6">
+
+        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           <div>
             <label
               htmlFor="full_name"
@@ -76,6 +85,8 @@ export default function SignUpPage() {
               onChange={handleChange}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#5A189A] dark:focus:ring-yellow-400 dark:bg-gray-700 dark:text-white"
               required
+              aria-required="true"
+              disabled={loading}
             />
           </div>
           <div>
@@ -93,6 +104,8 @@ export default function SignUpPage() {
               onChange={handleChange}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#5A189A] dark:focus:ring-yellow-400 dark:bg-gray-700 dark:text-white"
               required
+              aria-required="true"
+              disabled={loading}
             />
           </div>
           <div>
@@ -110,12 +123,15 @@ export default function SignUpPage() {
               onChange={handleChange}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#5A189A] dark:focus:ring-yellow-400 dark:bg-gray-700 dark:text-white"
               required
+              aria-required="true"
+              disabled={loading}
             />
           </div>
           <Button
             type="submit"
             className="w-full bg-[#5A189A] hover:bg-[#7B2CBF] text-white font-bold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-[#5A189A] dark:focus:ring-yellow-400"
             disabled={loading}
+            aria-label="Sign Up"
           >
             {loading ? "Signing Up..." : "Sign Up"}
           </Button>

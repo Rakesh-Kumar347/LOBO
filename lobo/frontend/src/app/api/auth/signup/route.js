@@ -5,7 +5,6 @@ export async function POST(request) {
   try {
     const { email, password, full_name } = await request.json();
 
-    // Validate input
     if (!email || !password || !full_name) {
       return NextResponse.json(
         { success: false, message: "All fields are required." },
@@ -13,40 +12,29 @@ export async function POST(request) {
       );
     }
 
-    // Sign up the user using Supabase Auth
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: {
-          full_name,
-        },
+        data: { full_name },
       },
     });
 
     if (error) {
       return NextResponse.json(
         { success: false, message: error.message },
-        { status: 500 }
+        { status: 400 }
       );
     }
 
-    // Check if the user was created successfully
-    if (data.user) {
-      return NextResponse.json(
-        { success: true, message: "Sign-up successful! Please check your email to verify your account." },
-        { status: 200 }
-      );
-    } else {
-      return NextResponse.json(
-        { success: false, message: "Failed to create user." },
-        { status: 500 }
-      );
-    }
-  } catch (err) {
-    console.error(err);
     return NextResponse.json(
-      { success: false, message: "An unexpected error occurred." },
+      { success: true, message: "Sign-up successful! Please check your email to confirm.", user: data.user },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("Sign-up error:", error);
+    return NextResponse.json(
+      { success: false, message: "An internal error occurred." },
       { status: 500 }
     );
   }

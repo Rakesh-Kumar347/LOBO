@@ -5,29 +5,37 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { toast } from "react-toastify"; // Import toast
 
 export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
     setLoading(true);
 
+    if (!email.includes("@") || password.length < 6) {
+      toast.error("Please enter a valid email and a password with at least 6 characters.");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const { success, message } = await login(email, password);
-      if (success) {
-        router.push('/');
+      const successLogin = await login(email, password);
+      if (!successLogin) {
+        toast.error("Invalid email or password.");
       } else {
-        setError(message);
+        toast.success("Sign-in successful!");
+        setTimeout(() => {
+          router.push("/");
+        }, 1000); // Short delay to show success
       }
     } catch (err) {
-      setError("An error occurred during sign-in.");
+      toast.error("An unexpected error occurred during sign-in. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -39,14 +47,13 @@ export default function SignInPage() {
         <h1 className="text-3xl font-bold text-center mb-6 text-[#5A189A] dark:text-white">
           Sign In
         </h1>
-        {error && (
-          <div className="mb-4 p-2 bg-red-100 text-red-700 rounded text-center">
-            {error}
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-6">
+
+        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
               Email
             </label>
             <input
@@ -56,10 +63,15 @@ export default function SignInPage() {
               onChange={(e) => setEmail(e.target.value)}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#5A189A] dark:focus:ring-yellow-400 dark:bg-gray-700 dark:text-white"
               required
+              aria-required="true"
+              disabled={loading}
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
               Password
             </label>
             <input
@@ -69,12 +81,15 @@ export default function SignInPage() {
               onChange={(e) => setPassword(e.target.value)}
               className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#5A189A] dark:focus:ring-yellow-400 dark:bg-gray-700 dark:text-white"
               required
+              aria-required="true"
+              disabled={loading}
             />
           </div>
           <Button
             type="submit"
             className="w-full bg-[#5A189A] hover:bg-[#7B2CBF] text-white font-bold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-[#5A189A] dark:focus:ring-yellow-400"
             disabled={loading}
+            aria-label="Sign In"
           >
             {loading ? "Signing In..." : "Sign In"}
           </Button>
@@ -82,7 +97,10 @@ export default function SignInPage() {
         <div className="mt-4 text-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Don’t have an account?{" "}
-            <Link href="/signup" className="text-[#5A189A] dark:text-yellow-400 hover:underline">
+            <Link
+              href="/signup"
+              className="text-[#5A189A] dark:text-yellow-400 hover:underline"
+            >
               Sign Up
             </Link>
           </p>
