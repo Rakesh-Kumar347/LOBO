@@ -1,3 +1,4 @@
+// src/app/layout.js
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -8,7 +9,8 @@ import { ErrorBoundary } from "react-error-boundary";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "./globals.css";
-import React from "react";
+import Head from "next/head";
+import { Loader2 } from "lucide-react";
 
 function ErrorFallback({ error, resetErrorBoundary }) {
   return (
@@ -43,32 +45,35 @@ export default function RootLayout({ children }) {
   }, [applyTheme]);
 
   const toggleDarkMode = useCallback(() => {
-    setDarkMode((prev) => {
-      const newMode = !prev;
-      return newMode;
-    });
+    setDarkMode((prev) => !prev);
   }, []);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background w-full">
-        <span className="text-xl animate-pulse">Loading...</span>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-12 h-12 animate-spin text-primary" aria-label="Loading" />
       </div>
     );
   }
 
   return (
     <html lang="en">
-      <head>
-        <title>LOBO Project</title>
+      <Head>
+        <title>LOBO - Your AI Assistant</title>
         <meta
           name="description"
-          content="A modern web application built with Next.js and Tailwind CSS."
+          content="LOBO is a generative AI-powered web application for data automation, chatbot interactions, and more."
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="robots" content="index, follow" />
+        <meta name="keywords" content="AI, chatbot, data automation, web development" />
         <link rel="icon" href="/favicon.ico" />
-      </head>
+        <meta property="og:title" content="LOBO - Your AI Assistant" />
+        <meta property="og:description" content="Discover LOBO, your smart local AI for data and automation tasks." />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://yourdomain.com" /> {/* Replace with your domain */}
+        <meta property="og:image" content="/og-image.jpg" /> {/* Add an OG image in /public */}
+      </Head>
       <body className="bg-background text-foreground transition-colors duration-200 flex flex-col min-h-screen w-full overflow-x-hidden">
         <AuthProvider>
           <Navbar darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
@@ -76,9 +81,7 @@ export default function RootLayout({ children }) {
             FallbackComponent={ErrorFallback}
             onReset={() => window.location.reload()}
           >
-            <main className="flex-1 w-full">
-              {React.cloneElement(children, { darkMode })}
-            </main>
+            <main className="flex-1 w-full">{children}</main>
           </ErrorBoundary>
           <Footer darkMode={darkMode} />
           <ToastContainer
@@ -94,7 +97,6 @@ export default function RootLayout({ children }) {
             theme={darkMode ? "dark" : "light"}
             style={{ top: "80px" }}
             aria-live="polite"
-            role="alert"
           />
         </AuthProvider>
       </body>
