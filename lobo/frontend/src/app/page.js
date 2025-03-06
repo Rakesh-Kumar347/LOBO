@@ -1,4 +1,3 @@
-// src/app/page.js
 "use client";
 
 import { motion, useInView } from "framer-motion";
@@ -85,18 +84,18 @@ export default function HomePage({ darkMode }) {
     setHoveredLetter(null);
   };
 
-  // Letter-by-letter animation with bounce
+  // NEW ANIMATION: 3D rotation with fade-in effect
   const letterVariants = {
-    hidden: { opacity: 0, y: 50 },
+    hidden: { opacity: 0, rotateY: 90, scale: 0.5 },
     visible: (i) => ({
       opacity: 1,
-      y: 0,
+      rotateY: 0,
+      scale: 1,
       transition: {
-        duration: 0.6,
-        delay: i * 0.15,
-        ease: "easeOut",
-        type: "spring",
-        bounce: 0.4,
+        duration: 0.8,
+        delay: i * 0.2,
+        ease: [0.6, 0.01, -0.05, 0.95], // Custom easing function
+        type: "tween",
       },
     }),
   };
@@ -164,7 +163,7 @@ export default function HomePage({ darkMode }) {
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             </defs>
-            <g transform="translate(400, 100)" textAnchor="middle">
+            <g transform="translate(400, 100)" textAnchor="middle" style={{ transformStyle: "preserve-3d" }}>
               {loboLetters.map((letter, index) => (
                 <motion.text
                   key={index}
@@ -179,6 +178,7 @@ export default function HomePage({ darkMode }) {
                   initial="hidden"
                   animate="visible"
                   variants={letterVariants}
+                  style={{ transformOrigin: "center", perspective: "1000px" }}
                 >
                   {letter}
                 </motion.text>
@@ -206,7 +206,7 @@ export default function HomePage({ darkMode }) {
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: loboLetters.length * 0.15 + 0.2 }}
+          transition={{ duration: 0.8, delay: loboLetters.length * 0.2 + 0.2 }}
           className="text-xl md:text-2xl mt-4 max-w-2xl mx-auto"
         >
           Your Smart Local AI Assistant for Data & Automation
@@ -214,7 +214,7 @@ export default function HomePage({ darkMode }) {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: loboLetters.length * 0.15 + 0.4 }}
+          transition={{ duration: 0.8, delay: loboLetters.length * 0.2 + 0.4 }}
           className="mt-8"
         >
           <Button
