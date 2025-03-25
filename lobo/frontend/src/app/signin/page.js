@@ -1,18 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { toast } from "react-toastify"; // Import toast
+import { toast } from "react-toastify";
 
 export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, session } = useAuth();
+
+  // Check if already logged in
+  useEffect(() => {
+    if (session?.user) {
+      router.push("/aichatbot");
+    }
+  }, [session, router]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,16 +32,27 @@ export default function SignInPage() {
     }
 
     try {
+      console.log("Attempting login...");
       const successLogin = await login(email, password);
+      
       if (!successLogin) {
         toast.error("Invalid email or password.");
       } else {
         toast.success("Sign-in successful!");
+        
+        // Add a small delay to ensure auth state propagates
         setTimeout(() => {
-          router.push("/");
-        }, 1000); // Short delay to show success
+          console.log("Redirecting to chatbot after login");
+          router.push("/aichatbot");
+          
+          // Force page reload after redirect to ensure auth state is fresh
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        }, 1000);
       }
     } catch (err) {
+      console.error("Login error:", err);
       toast.error("An unexpected error occurred during sign-in. Please try again.");
     } finally {
       setLoading(false);
@@ -96,7 +114,7 @@ export default function SignInPage() {
         </form>
         <div className="mt-4 text-center">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Don’t have an account?{" "}
+            Don't have an account?{" "}
             <Link
               href="/signup"
               className="text-[#5A189A] dark:text-yellow-400 hover:underline"
@@ -105,6 +123,21 @@ export default function SignInPage() {
             </Link>
           </p>
         </div>
+        
+        {/* Debug button - remove in production */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-4 text-center">
+            <button 
+              onClick={() => {
+                console.log("Current session:", session);
+                console.log("Is authenticated:", !!session?.user);
+              }}
+              className="text-xs text-gray-500"
+            >
+              Debug Auth
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

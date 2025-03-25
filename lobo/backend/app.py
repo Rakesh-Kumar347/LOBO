@@ -12,6 +12,11 @@ from routes.chatbot import chatbot
 from routes.auth import auth_bp
 from routes.files import files_bp
 from utils.database import initialize_db
+from routes.csrf import csrf_bp
+from routes.chats import chats_bp
+from middleware.csrf_middleware import set_csrf_token
+from routes.chat_search import chat_search_bp
+
 
 # ✅ Load environment variables
 load_dotenv()
@@ -31,6 +36,9 @@ app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(seconds=Config.JWT_REFRESH_T
 app.config["JWT_TOKEN_LOCATION"] = Config.JWT_TOKEN_LOCATION
 app.config["JWT_HEADER_NAME"] = Config.JWT_HEADER_NAME
 app.config["JWT_HEADER_TYPE"] = Config.JWT_HEADER_TYPE
+app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_PERMANENT"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 # ✅ Validate required configurations
 required_config = ["SECRET_KEY", "JWT_SECRET_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]
@@ -56,10 +64,23 @@ limiter = Limiter(
     default_limits=["500 per minute"]
 )
 
+# Initialize session if using flask-session extension (optional)
+if hasattr(Config, 'USE_SESSION_EXTENSION') and Config.USE_SESSION_EXTENSION:
+    try:
+        from flask_session import Session
+        Session(app)
+        print("Flask-Session extension initialized")
+    except ImportError:
+        print("Flask-Session extension not installed but was requested in config")
+
 # ✅ Register Blueprints (API Routes)
 app.register_blueprint(chatbot, url_prefix="/api/chatbot")
 app.register_blueprint(auth_bp, url_prefix="/api/auth")
 app.register_blueprint(files_bp, url_prefix="/api/files")
+app.register_blueprint(csrf_bp, url_prefix="/api/csrf")
+app.register_blueprint(chats_bp, url_prefix="/api/chats")
+app.register_blueprint(chat_search_bp, url_prefix="/api/chats/search")
+
 
 # ✅ Apply rate limiting to the chatbot route
 limiter.limit("500 per minute")(chatbot)

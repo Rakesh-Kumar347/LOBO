@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { toast } from "react-toastify"; // Import toast
+import { toast } from "react-toastify";
+import { supabase } from "@/lib/supabase";
 
 export default function SignUpPage() {
   const [formData, setFormData] = useState({
@@ -39,23 +40,25 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+      // Direct Supabase signup - this avoids the need for a custom backend endpoint
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: { full_name: formData.full_name }
+        }
       });
 
-      const data = await response.json();
-
-      if (!data.success) {
-        toast.error(data.message || "Sign-up failed. Please try again.");
+      if (error) {
+        toast.error(error.message || "Sign-up failed. Please try again.");
       } else {
-        toast.success("Sign-up successful!");
+        toast.success("Sign-up successful! Please check your email to confirm.");
         setTimeout(() => {
           router.push("/signin");
         }, 2000); // Redirect after 2 seconds
       }
     } catch (err) {
+      console.error("Signup error:", err);
       toast.error("An unexpected error occurred. Please try again later.");
     } finally {
       setLoading(false);

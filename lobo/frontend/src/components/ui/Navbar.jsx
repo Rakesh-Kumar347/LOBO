@@ -4,9 +4,10 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import { features } from "@/lib/features";
-import { UserCircle, Sun, Moon, ChevronDown, Menu } from "lucide-react";
+import { Sun, Moon, ChevronDown, Menu } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "react-toastify";
+import UserMenu from "./UserMenu";
 
 function useClickOutside(ref, callback) {
   useEffect(() => {
@@ -22,15 +23,12 @@ function useClickOutside(ref, callback) {
 
 export default function Navbar({ darkMode, toggleDarkMode }) {
   const { session, logout, loading } = useAuth();
-  const [showMenu, setShowMenu] = useState(false);
   const [showSolutionsDropdown, setShowSolutionsDropdown] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [logoutError, setLogoutError] = useState(null);
-  const menuRef = useRef(null);
   const solutionsDropdownRef = useRef(null);
   const router = useRouter();
 
-  useClickOutside(menuRef, () => setShowMenu(false));
   useClickOutside(solutionsDropdownRef, () => setShowSolutionsDropdown(false));
 
   const handleLogout = useCallback(async () => {
@@ -41,7 +39,6 @@ export default function Navbar({ darkMode, toggleDarkMode }) {
         toast.success("Logged out successfully!", { position: "top-center" });
         router.push("/");
       }
-      setShowMenu(false);
     } catch (error) {
       setLogoutError("Failed to log out. Please try again.");
       toast.error("Logout failed. Please try again.", { position: "top-center" });
@@ -52,7 +49,6 @@ export default function Navbar({ darkMode, toggleDarkMode }) {
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
-        setShowMenu(false);
         setShowSolutionsDropdown(false);
         setIsMobileMenuOpen(false);
       }
@@ -196,51 +192,7 @@ export default function Navbar({ darkMode, toggleDarkMode }) {
             </motion.button>
           </>
         ) : (
-          session && (
-            <div className="relative" ref={menuRef}>
-              <motion.button
-                onClick={() => setShowMenu((prev) => !prev)}
-                aria-label="User Menu"
-                disabled={loading}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                <div
-                  className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-white font-bold"
-                  aria-label={`User: ${session?.user?.email}`}
-                >
-                  {session?.user?.email?.charAt(0).toUpperCase()}
-                </div>
-              </motion.button>
-              {showMenu && (
-                <motion.div
-                  className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 shadow-lg rounded-md py-2 z-50"
-                  variants={menuVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                >
-                  <p
-                    className={`px-4 py-2 font-semibold break-words ${
-                      darkMode ? "text-white" : "text-gray-900"
-                    }`}
-                  >
-                    {session.user?.email}
-                  </p>
-                  <hr className="border-gray-300 dark:border-gray-600" />
-                  <motion.button
-                    onClick={handleLogout}
-                    className={`w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 ${
-                      darkMode ? "text-white" : "text-gray-900"
-                    }`}
-                    whileHover={{ x: 5 }}
-                  >
-                    {loading ? "Logging Out..." : "Log Out"}
-                  </motion.button>
-                </motion.div>
-              )}
-            </div>
-          )
+          session && <UserMenu />
         )}
       </div>
 

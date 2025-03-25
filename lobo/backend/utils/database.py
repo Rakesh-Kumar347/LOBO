@@ -31,6 +31,11 @@ def initialize_db(retries: int = 3, delay: int = 2):
                 raise ValueError("Missing Supabase URL or Service Role Key in .env file.")
             
             supabase = create_client(supabase_url, supabase_key)
+
+            # Test the connection
+            # test_result = supabase.table("chat_history").select("count(*)", count="exact").limit(1).execute()
+            # print(f"Supabase connection test: {test_result}")
+
             logging.info("Supabase database connection initialized successfully!")
             return
         except Exception as e:

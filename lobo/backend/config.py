@@ -64,6 +64,13 @@ class Config:
     # 📄 Max Input Length for Chatbot
     MAX_INPUT_LENGTH: int = int(os.getenv("MAX_INPUT_LENGTH", 1000))  # Default: 1000 characters
 
+    # Add this to the Config class in config.py
+    # Session Configuration
+    USE_SESSION_EXTENSION = os.getenv("USE_SESSION_EXTENSION", "False").lower() == "true"
+    SESSION_TYPE = os.getenv("SESSION_TYPE", "filesystem")
+    SESSION_PERMANENT = True
+    PERMANENT_SESSION_LIFETIME = int(os.getenv("SESSION_LIFETIME_DAYS", 7)) * 86400  # days to seconds
+
 # ✅ Validate required environment variables
 required_vars = ["SECRET_KEY", "JWT_SECRET_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]
 for var in required_vars:
