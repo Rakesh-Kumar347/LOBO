@@ -63,3 +63,27 @@ def load_vector_store() -> Optional[FAISS]:
     except Exception as e:
         logging.error(f"Error loading FAISS index: {str(e)}")
         return None
+    
+def process_document_for_vectors(text):
+    """
+    Process a document to prepare it for vector storage.
+    
+    Args:
+        text (str): Text to process
+        
+    Returns:
+        str: Processed text ready for vector embedding
+    """
+    if not text:
+        return ""
+    
+    # Basic processing - remove extra whitespace
+    processed_text = " ".join(text.split())
+    
+    # You can add more processing steps here as needed:
+    # - Tokenization
+    # - Stop word removal
+    # - Stemming/lemmatization
+    # - etc.
+    
+    return processed_text

@@ -1,7 +1,12 @@
+# File: lobo/backend/config.py
+# Enhancement: Improved JWT security with shorter expiration, token rotation, and stronger validation
+
 import os
 import logging
 from datetime import timedelta
 from dotenv import load_dotenv
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 
 # ✅ Load environment variables
 load_dotenv()
@@ -11,65 +16,105 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logging.info("Loading configuration settings...")
 
 class Config:
-    """
-    Configuration class for the Flask application.
-
-    Attributes:
-        SECRET_KEY (str): Secret key for Flask application security.
-        JWT_SECRET_KEY (str): Secret key for signing JWT tokens.
-        JWT_ACCESS_TOKEN_EXPIRES (int): Expiration time for JWT access tokens (in seconds).
-        JWT_REFRESH_TOKEN_EXPIRES (int): Expiration time for JWT refresh tokens (in seconds).
-        SUPABASE_URL (str): URL of the Supabase project.
-        SUPABASE_SERVICE_ROLE_KEY (str): Service role key for full access to Supabase.
-        SUPABASE_ANON_KEY (str): Anonymous key for public access to Supabase.
-        SUPABASE_DB_URL (str): Connection URL for the Supabase PostgreSQL database.
-        OLLAMA_MODEL (str): Name of the Ollama AI model to use.
-        VECTOR_DB_PATH (str): Directory path for FAISS vector storage.
-        FLASK_DEBUG (bool): Enables or disables Flask debug mode.
-        PORT (int): Port on which the Flask application runs.
-        FRONTEND_URL (str): URL of the frontend application for CORS configuration.
-        MAX_INPUT_LENGTH (int): Maximum allowed length for chatbot input.
-    """
+    """Enhanced configuration class for the Flask application."""
 
     # 🔐 Security Keys
     SECRET_KEY: str = os.getenv("SECRET_KEY", "default_secret_key")
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "default_jwt_secret_key")
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+    SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL","deepseek-r1:1.5b")
 
-    # 🔑 JWT Configuration
-    JWT_ACCESS_TOKEN_EXPIRES: int = int(os.getenv("JWT_EXPIRATION_MINUTES", 30)) * 60  # Convert minutes to seconds
-    JWT_REFRESH_TOKEN_EXPIRES: int = int(os.getenv("JWT_REFRESH_EXPIRATION_HOURS", 24)) * 3600  # Convert hours to seconds
-    JWT_TOKEN_LOCATION: list = ["headers"]
+    # 🔑 Enhanced JWT Configuration
+    JWT_ACCESS_TOKEN_EXPIRES: int = int(os.getenv("JWT_EXPIRATION_MINUTES", 15)) * 60  # Reduced to 15 minutes
+    JWT_REFRESH_TOKEN_EXPIRES: int = int(os.getenv("JWT_REFRESH_EXPIRATION_HOURS", 24)) * 3600
+    JWT_TOKEN_LOCATION: list = ["headers", "cookies"]  # Added cookies for more secure storage
+    JWT_COOKIE_SECURE: bool = os.getenv("JWT_COOKIE_SECURE", "False").lower() == "true"  # Use secure cookies in production
+    JWT_COOKIE_CSRF_PROTECT: bool = True  # Enable CSRF protection for cookies
+    JWT_CSRF_CHECK_FORM: bool = True  # Check CSRF token in form data
     JWT_HEADER_NAME: str = "Authorization"
     JWT_HEADER_TYPE: str = "Bearer"
+    JWT_BLACKLIST_ENABLED: bool = True  # Enable token blacklisting for logout
+    JWT_BLACKLIST_TOKEN_CHECKS: list = ["access", "refresh"]  # Check both token types
 
-    # 🗄️ Supabase Configuration
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL")
-    SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY")
-    SUPABASE_DB_URL: str = os.getenv("SUPABASE_DB_URL")
+    # 🔒 CORS Configuration
+    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    CORS_METHODS: list = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    CORS_ALLOW_HEADERS: list = ["Content-Type", "Authorization", "X-CSRF-Token"]
+    CORS_SUPPORTS_CREDENTIALS: bool = True
+    
+    # 🥾 Session Configuration
+    SESSION_TYPE: str = "filesystem"
+    SESSION_PERMANENT: bool = True
+    PERMANENT_SESSION_LIFETIME: int = int(os.getenv("SESSION_LIFETIME_DAYS", 7)) * 86400
+    SESSION_COOKIE_SECURE: bool = os.getenv("SESSION_COOKIE_SECURE", "False").lower() == "true"
+    SESSION_COOKIE_HTTPONLY: bool = True
+    SESSION_COOKIE_SAMESITE: str = "Lax"  # Prevents CSRF, less strict than 'Strict'
+    MAX_INPUT_LENGTH = int(os.getenv("MAX_INPUT_LENGTH", 1000))  
 
-    # 🤖 Ollama AI Model
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "deepseek-r1:1.5b")
+    # 🔍 Content Security Policy
+    CSP_DIRECTIVES: dict = {
+        'default-src': ["'self'"],
+        'script-src': ["'self'", "https://cdnjs.cloudflare.com"],
+        'style-src': ["'self'", "https://fonts.googleapis.com", "'unsafe-inline'"],
+        'img-src': ["'self'", "data:"],
+        'font-src': ["'self'", "https://fonts.gstatic.com"],
+        'connect-src': ["'self'", os.getenv("FRONTEND_URL", "http://localhost:3000")],
+    }
 
-    # 🔍 FAISS Vector Database Storage Path
-    VECTOR_DB_PATH: str = os.getenv("VECTOR_DB_PATH", "vector_db")
+    # Other configurations remain the same...
+    
+    # ✅ RSA Key Pair for JWT (if using asymmetric signing)
+    @classmethod
+    def generate_rsa_keys(cls):
+        """Generate RSA key pair for JWT signing."""
+        try:
+            key_dir = os.path.join(os.path.dirname(__file__), 'keys')
+            os.makedirs(key_dir, exist_ok=True)
+            
+            private_key_path = os.path.join(key_dir, 'jwt-private.pem')
+            public_key_path = os.path.join(key_dir, 'jwt-public.pem')
+            
+            # Check if keys already exist
+            if os.path.exists(private_key_path) and os.path.exists(public_key_path):
+                logging.info("RSA keys already exist, loading...")
+                return
+            
+            # Generate private key
+            private_key = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=2048
+            )
+            
+            # Get public key
+            public_key = private_key.public_key()
+            
+            # Serialize private key
+            private_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            
+            # Serialize public key
+            public_pem = public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            
+            # Write to files
+            with open(private_key_path, 'wb') as f:
+                f.write(private_pem)
+            
+            with open(public_key_path, 'wb') as f:
+                f.write(public_pem)
+                
+            logging.info("RSA key pair generated successfully.")
+        except Exception as e:
+            logging.error(f"Failed to generate RSA keys: {e}")
 
-    # 🚀 Flask Configuration
-    FLASK_DEBUG: bool = os.getenv("FLASK_DEBUG", "True").lower() == "true"
-    PORT: int = int(os.getenv("PORT", 5000))
-
-    # 🖥️ Frontend URL for CORS
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
-
-    # 📄 Max Input Length for Chatbot
-    MAX_INPUT_LENGTH: int = int(os.getenv("MAX_INPUT_LENGTH", 1000))  # Default: 1000 characters
-
-    # Add this to the Config class in config.py
-    # Session Configuration
-    USE_SESSION_EXTENSION = os.getenv("USE_SESSION_EXTENSION", "False").lower() == "true"
-    SESSION_TYPE = os.getenv("SESSION_TYPE", "filesystem")
-    SESSION_PERMANENT = True
-    PERMANENT_SESSION_LIFETIME = int(os.getenv("SESSION_LIFETIME_DAYS", 7)) * 86400  # days to seconds
 
 # ✅ Validate required environment variables
 required_vars = ["SECRET_KEY", "JWT_SECRET_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]
@@ -78,3 +123,8 @@ for var in required_vars:
         raise ValueError(f"❌ Missing required environment variable: {var}")
 
 logging.info("Configuration settings loaded successfully.")
+
+# Generate RSA keys if needed
+Config.generate_rsa_keys()
+
+

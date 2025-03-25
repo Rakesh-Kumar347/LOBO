@@ -3,6 +3,9 @@ from flask import Blueprint, request, jsonify, session
 import ollama
 from config import Config  # Import configuration settings
 from flask_limiter.util import get_remote_address
+from utils.websocket import broadcast_chat_update
+import datetime
+
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -21,6 +24,7 @@ def chatbot_response():
     try:
         data = request.json
         user_message = data.get("message", "").strip()
+        chat_id = data.get("chat_id")
 
         # Log the incoming request
         logging.info(f"Received message: {user_message}")
@@ -55,6 +59,17 @@ def chatbot_response():
         chat_history.append({"role": "assistant", "content": bot_response})
         session["chat_history"] = chat_history  # Store chat history in session
         session.permanent = True  # Enable session expiration
+
+        # If chat_id is provided, broadcast the response via WebSocket
+        if chat_id:
+            broadcast_chat_update(chat_id, "new_message", {
+                "chat_id": chat_id,
+                "message": {
+                    "role": "assistant",
+                    "content": bot_response,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            })
 
         return jsonify({"response": bot_response}), 200
 
