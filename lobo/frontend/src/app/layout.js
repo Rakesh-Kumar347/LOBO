@@ -1,10 +1,7 @@
-// src/app/layout.js
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { AuthProvider } from "@/context/AuthProvider";
-import Navbar from "@/components/ui/Navbar";
-import Footer from "@/components/ui/Footer";
 import { ErrorBoundary } from "react-error-boundary";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -34,19 +31,12 @@ export default function RootLayout({ children }) {
   });
   const [isLoading, setIsLoading] = useState(true);
 
-  const applyTheme = useCallback(() => {
+  // Apply theme based on darkMode state
+  useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
     localStorage.setItem("theme", darkMode ? "dark" : "light");
     setIsLoading(false);
   }, [darkMode]);
-
-  useEffect(() => {
-    applyTheme();
-  }, [applyTheme]);
-
-  const toggleDarkMode = useCallback(() => {
-    setDarkMode((prev) => !prev);
-  }, []);
 
   if (isLoading) {
     return (
@@ -76,14 +66,12 @@ export default function RootLayout({ children }) {
       </Head>
       <body className="bg-background text-foreground transition-colors duration-200 flex flex-col min-h-screen w-full overflow-x-hidden">
         <AuthProvider>
-          <Navbar darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
           <ErrorBoundary
             FallbackComponent={ErrorFallback}
             onReset={() => window.location.reload()}
           >
             <main className="flex-1 w-full">{children}</main>
           </ErrorBoundary>
-          <Footer darkMode={darkMode} />
           <ToastContainer
             position="top-center"
             autoClose={3000}
