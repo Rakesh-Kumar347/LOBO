@@ -172,3 +172,20 @@ export const enhancedApiRequest = async (endpoint, options = {}, customErrorHand
     throw { errorType, errorMessage };
   }
 }
+/**
+ * Wrap component with error boundary
+ * @param {Component} Component - React component to wrap
+ * @returns {Component} - Wrapped component with error boundary
+ */
+export const withErrorBoundary = (Component) => {
+  return function WithErrorBoundary(props) {
+    return (
+      <ErrorBoundary>
+        <Component {...props} />
+      </ErrorBoundary>
+    );
+  };
+};
+
+// Export ErrorBoundary from component
+import { ErrorBoundary } from '@/components/ui/ErrorHandler';

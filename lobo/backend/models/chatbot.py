@@ -32,7 +32,7 @@ class Chatbot:
             Optional[str]: AI-generated response, or None if an error occurs.
         """
         try:
-            response = self.llm.invoke(prompt, temperature=temperature, max_tokens=max_tokens)
+            response = self.llm.invoke(prompt)
             return response
         except Exception as e:
             logging.error(f"Error generating response for prompt: '{prompt}'. Error: {str(e)}")

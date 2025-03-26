@@ -1,17 +1,16 @@
-// File: lobo/frontend/src/components/chat/ChatUI.jsx
-// Enhancement: Improved chat UI with better accessibility, animations, and features
+// File: src/components/chat/ChatUI.jsx
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Send, Square, RefreshCw, Settings, ChevronDown, ChevronUp, 
+  Send, Square, RefreshCw, Settings, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   Mic, Copy, Edit, Trash, Download, Camera, Image, Paperclip,
   Loader2, MessageSquare, Info, AlertTriangle, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import VoiceRecorder from '@/components/ui/VoiceRecorder';
 import SuggestedQuestions from '@/components/ui/SuggestedQuestions';
-import { parseMarkdown } from '@/lib/markdownParser';
+import { parseMarkdown, parseUserMarkdown } from '@/lib/markdownParser';
 import { toast } from 'react-toastify';
 import { useAuth } from '@/context/AuthProvider';
 import ChatExportImport from '@/components/ui/ChatExportImport';
@@ -49,6 +48,10 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
   const [fileToAttach, setFileToAttach] = useState(null);
   const [attachmentProgress, setAttachmentProgress] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  
+  // New states for branch navigation
+  const [currentBranchIndex, setCurrentBranchIndex] = useState({});
+  const [messageBranches, setMessageBranches] = useState({});
   
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -115,7 +118,7 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
           return updated;
         });
         
-        // Track regenerated responses
+        // Track regenerated responses for this user message
         const userMessageIndex = assistantMessageIndex - 1;
         if (userMessageIndex >= 0 && messages[userMessageIndex]?.role === "user") {
           const userInput = messages[userMessageIndex].content;
@@ -180,116 +183,6 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
     return () => chatContainer.removeEventListener('scroll', handleScroll);
   }, []);
   
-  // Handle attachment file selection
-  const handleFileSelection = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setFileToAttach(file);
-    }
-  };
-  
-  const openFileDialog = () => {
-    fileInputRef.current?.click();
-  };
-  
-  // Handle attachment upload
-  const uploadAttachment = async () => {
-    if (!fileToAttach || !session?.access_token) return;
-    
-    setAttaching(true);
-    setAttachmentProgress(10);
-    
-    try {
-      // Create FormData for file upload
-      const formData = new FormData();
-      formData.append('file', fileToAttach);
-      
-      // Set up XMLHttpRequest to track progress
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_URL}/files/upload`);
-      xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
-      
-      // Track upload progress
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const progress = Math.round((event.loaded / event.total) * 90);
-          setAttachmentProgress(progress);
-        }
-      };
-      
-      // Handle response
-      const uploadPromise = new Promise((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            const response = JSON.parse(xhr.responseText);
-            resolve(response);
-          } else {
-            reject(new Error(`HTTP Error: ${xhr.status}`));
-          }
-        };
-        xhr.onerror = () => reject(new Error('Network Error'));
-      });
-      
-      // Wait for upload to complete
-      const response = await uploadPromise;
-      
-      // Set attachment progress to 100%
-      setAttachmentProgress(100);
-      
-      // If successful, add file reference to the chat
-      if (response.success && response.data) {
-        const fileData = response.data;
-        
-        // Create message with file attachment
-        const fileMessage = {
-          role: 'user',
-          content: `[Attachment: ${fileData.original_filename}]`,
-          attachment: {
-            file_id: fileData.file_id,
-            filename: fileData.original_filename,
-            mime_type: fileData.mime_type,
-            file_size: fileData.file_size,
-            preview: fileData.preview
-          }
-        };
-        
-        // Add message to chat
-        setMessages(prev => [...prev, fileMessage]);
-        setFileToAttach(null);
-        
-        // Automatically send a message to get AI to analyze the file
-        const analysisPrompt = `I've attached a file named ${fileData.original_filename}. Can you analyze it for me?`;
-        setInputText(analysisPrompt);
-        
-        // Small delay before sending the message
-        setTimeout(() => {
-          sendMessage(analysisPrompt);
-        }, 500);
-        
-        toast.success('File uploaded successfully!');
-        announcePolite('File uploaded successfully');
-      }
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      toast.error('Failed to upload file');
-      setError('Failed to upload file. Please try again.');
-    } finally {
-      setAttaching(false);
-    }
-  };
-  
-  // Cancel file attachment
-  const cancelAttachment = () => {
-    setFileToAttach(null);
-  };
-  
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-      setShouldAutoScroll(true);
-    }
-  };
-  
   // Function to auto-resize text area
   const adjustTextareaHeight = useCallback(() => {
     if (inputRef.current) {
@@ -306,20 +199,194 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
     adjustTextareaHeight();
   }, [inputText, adjustTextareaHeight]);
   
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      setShouldAutoScroll(true);
+    }
+  };
+  
+  // Save chat to backend
+  const saveChat = async () => {
+    if (!session?.access_token || messages.length === 0) return;
+    
+    try {
+      const firstUserMessage = messages.find(m => m.role === 'user');
+      const title = firstUserMessage?.content.slice(0, 50) + '...' || 'New Chat';
+      
+      const chatData = {
+        title,
+        messages,
+        category: 'General'
+      };
+      
+      const method = currentChatId ? 'PUT' : 'POST';
+      const url = currentChatId ? `/chats/${currentChatId}` : '/chats';
+      
+      const response = await fetch(`${API_URL}${url}`, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(chatData)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to save chat');
+      }
+      
+      const data = await response.json();
+      
+      if (!currentChatId && data.data?.chat_id) {
+        setCurrentChatId(data.data.chat_id);
+      }
+      
+      // Notify parent component if callback is provided
+      if (onSaveChat) {
+        onSaveChat(currentChatId || data.data?.chat_id);
+      }
+      
+    } catch (error) {
+      console.error('Failed to save chat:', error);
+      // No need to show toast for routine auto-saves
+    }
+  };
+  
+  // Navigate between message branches
+  const navigateBranch = (index, direction) => {
+    const branches = messageBranches[index] || [];
+    const currentIndex = currentBranchIndex[index] || 0;
+    const newIndex = currentIndex + direction;
+
+    if (newIndex >= 0 && newIndex < branches.length) {
+      // Save current branch before switching
+      const newBranches = [...branches];
+      newBranches[currentIndex] = messages.slice(index);
+
+      setMessageBranches(prev => ({
+        ...prev,
+        [index]: newBranches
+      }));
+
+      // Apply the branch messages
+      setMessages(prev => [...prev.slice(0, index), ...branches[newIndex]]);
+      
+      // Update current branch index
+      setCurrentBranchIndex(prev => ({
+        ...prev,
+        [index]: newIndex
+      }));
+      
+      announcePolite('Navigated to different message branch');
+    }
+  };
+  
+  // Navigate between regenerated responses
+  const navigateRegeneratedResponse = (index, direction) => {
+    const userMessageIndex = index - 1;
+    if (userMessageIndex < 0 || messages[userMessageIndex]?.role !== "user") return;
+
+    const userInput = messages[userMessageIndex].content;
+    if (!userInput) return;
+
+    const responses = regeneratedResponses[userInput] || [messages[index].content];
+    const currentIndex = currentRegenIndex[userInput] !== undefined ? currentRegenIndex[userInput] : 0;
+    const newIndex = currentIndex + direction;
+
+    if (newIndex >= 0 && newIndex < responses.length) {
+      // Save the current branch before switching
+      const currentBranchKey = `${userInput}-${currentIndex}`;
+      const subsequentMessages = messages.slice(index + 1);
+      if (subsequentMessages.length > 0) {
+        setResponseBranches(prev => ({
+          ...prev,
+          [currentBranchKey]: subsequentMessages
+        }));
+      }
+
+      // Restore the new branch
+      const newBranchKey = `${userInput}-${newIndex}`;
+      const newBranchMessages = responseBranches[newBranchKey] || [];
+
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[index] = { role: "assistant", content: responses[newIndex] };
+        return [...updated.slice(0, index + 1), ...newBranchMessages];
+      });
+
+      setCurrentRegenIndex(prev => ({
+        ...prev,
+        [userInput]: newIndex
+      }));
+      
+      announcePolite('Navigated to different AI response');
+    }
+  };
+  
   // Handle sending message
-  const sendMessage = async (messageText = inputText, isEdit = false, editIndex = null) => {
+  const sendMessage = async (messageText = inputText, isEdited = false, editIndex = null) => {
     if (!messageText.trim() || isTyping || isSending) return;
     
     setIsSending(true);
     
     try {
-      // If editing existing message, truncate the conversation
+      // If editing existing message, handle branch creation
       let updatedMessages;
-      if (isEdit && editIndex !== null) {
-        updatedMessages = [...messages.slice(0, editIndex)];
-        updatedMessages[editIndex] = { role: 'user', content: messageText };
+      
+      if (isEdited && editIndex !== null) {
+        // This is an edited message, create a new branch
+        const branchKey = editIndex;
+        const newBranch = [...messages.slice(editIndex)];
+        const currentIndex = currentBranchIndex[branchKey] || 0;
+
+        // Store the branch
+        setMessageBranches(prev => ({
+          ...prev,
+          [branchKey]: [
+            ...(prev[branchKey] || []).slice(0, currentIndex + 1),
+            newBranch,
+            ...(prev[branchKey] || []).slice(currentIndex + 1)
+          ]
+        }));
+
+        // Update the current branch index
+        setCurrentBranchIndex(prev => ({
+          ...prev,
+          [branchKey]: currentIndex + 1
+        }));
+
+        // Replace the message content and mark as branch point
+        updatedMessages = [...messages];
+        updatedMessages[editIndex] = {
+          ...updatedMessages[editIndex],
+          content: messageText,
+          isBranchPoint: true
+        };
+
+        // Truncate messages at this point
+        updatedMessages = updatedMessages.slice(0, editIndex + 1);
       } else {
-        updatedMessages = [...messages, { role: 'user', content: messageText }];
+        // Handle regular message or continuation of a regenerated response branch
+        const lastAssistantIndex = messages.length - 1;
+        
+        if (messages.length > 1 && messages[lastAssistantIndex]?.role === "assistant") {
+          // Getting the branch key from the last user message and current response variation
+          const userInput = messages[lastAssistantIndex - 1].content;
+          const regenIndex = currentRegenIndex[userInput] || 0;
+          const branchKey = `${userInput}-${regenIndex}`;
+          
+          updatedMessages = [...messages, { role: "user", content: messageText }];
+          
+          // Store this message as part of the current response branch
+          setResponseBranches(prev => ({
+            ...prev,
+            [branchKey]: [...(prev[branchKey] || []), { role: "user", content: messageText }]
+          }));
+        } else {
+          // Regular message (not part of a branch)
+          updatedMessages = [...messages, { role: "user", content: messageText }];
+        }
       }
       
       setMessages(updatedMessages);
@@ -470,7 +537,7 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
     if (currentTypingText && assistantMessageIndex !== null) {
       setMessages(prev => {
         const updated = [...prev];
-        updated[assistantMessageIndex] = { role: 'assistant', content: currentTypingText };
+        updated[assistantMessageIndex] = { role: "assistant", content: currentTypingText };
         return updated;
       });
     }
@@ -478,53 +545,6 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
     setCurrentTypingText('');
     setAssistantMessageIndex(null);
     announcePolite('Response generation stopped');
-  };
-  
-  // Save chat to backend
-  const saveChat = async () => {
-    if (!session?.access_token || messages.length === 0) return;
-    
-    try {
-      const firstUserMessage = messages.find(m => m.role === 'user');
-      const title = firstUserMessage?.content.slice(0, 50) + '...' || 'New Chat';
-      
-      const chatData = {
-        title,
-        messages,
-        category: 'General'
-      };
-      
-      const method = currentChatId ? 'PUT' : 'POST';
-      const url = currentChatId ? `/chats/${currentChatId}` : '/chats';
-      
-      const response = await fetch(`${API_URL}${url}`, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify(chatData)
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to save chat');
-      }
-      
-      const data = await response.json();
-      
-      if (!currentChatId && data.data?.chat_id) {
-        setCurrentChatId(data.data.chat_id);
-      }
-      
-      // Notify parent component if callback is provided
-      if (onSaveChat) {
-        onSaveChat(currentChatId || data.data?.chat_id);
-      }
-      
-    } catch (error) {
-      console.error('Failed to save chat:', error);
-      // No need to show toast for routine auto-saves
-    }
   };
   
   // Start editing a message
@@ -602,6 +622,109 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
     }
   };
   
+  // Handle attachment file selection
+  const handleFileSelection = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setFileToAttach(file);
+    }
+  };
+  
+  const openFileDialog = () => {
+    fileInputRef.current?.click();
+  };
+  
+  // Handle attachment upload
+  const uploadAttachment = async () => {
+    if (!fileToAttach || !session?.access_token) return;
+    
+    setAttaching(true);
+    setAttachmentProgress(10);
+    
+    try {
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('file', fileToAttach);
+      
+      // Set up XMLHttpRequest to track progress
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_URL}/files/upload`);
+      xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+      
+      // Track upload progress
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 90);
+          setAttachmentProgress(progress);
+        }
+      };
+      
+      // Handle response
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } else {
+            reject(new Error(`HTTP Error: ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network Error'));
+      });
+      
+      // Wait for upload to complete
+      const response = await uploadPromise;
+      
+      // Set attachment progress to 100%
+      setAttachmentProgress(100);
+      
+      // If successful, add file reference to the chat
+      if (response.success && response.data) {
+        const fileData = response.data;
+        
+        // Create message with file attachment
+        const fileMessage = {
+          role: 'user',
+          content: `[Attachment: ${fileData.original_filename}]`,
+          attachment: {
+            file_id: fileData.file_id,
+            filename: fileData.original_filename,
+            mime_type: fileData.mime_type,
+            file_size: fileData.file_size,
+            preview: fileData.preview
+          }
+        };
+        
+        // Add message to chat
+        setMessages(prev => [...prev, fileMessage]);
+        setFileToAttach(null);
+        
+        // Automatically send a message to get AI to analyze the file
+        const analysisPrompt = `I've attached a file named ${fileData.original_filename}. Can you analyze it for me?`;
+        setInputText(analysisPrompt);
+        
+        // Small delay before sending the message
+        setTimeout(() => {
+          sendMessage(analysisPrompt);
+        }, 500);
+        
+        toast.success('File uploaded successfully!');
+        announcePolite('File uploaded successfully');
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast.error('Failed to upload file');
+      setError('Failed to upload file. Please try again.');
+    } finally {
+      setAttaching(false);
+    }
+  };
+  
+  // Cancel file attachment
+  const cancelAttachment = () => {
+    setFileToAttach(null);
+  };
+  
   // Handle suggested question selection
   const handleSuggestedQuestion = (question) => {
     setInputText(question);
@@ -612,68 +735,6 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
     
     announcePolite(`Selected question: ${question}`);
   };
-  
-  // Define keyboard shortcuts
-  const keyboardShortcuts = [
-    {
-      key: 'n',
-      ctrl: true,
-      description: 'New chat',
-      action: () => {
-        if (window.confirm('Start a new chat? Current conversation will be saved if you are signed in.')) {
-          // First save current chat if needed
-          if (session?.user && messages.length > 0) {
-            saveChat();
-          }
-          
-          // Reset the chat
-          setMessages([]);
-          setCurrentChatId(null);
-          setEditingMessage(null);
-          setRegeneratedResponses({});
-          setCurrentRegenIndex({});
-          setResponseBranches({});
-          announcePolite('New chat created');
-        }
-      }
-    },
-    {
-      key: 's',
-      ctrl: true,
-      description: 'Save chat',
-      action: () => {
-        if (session?.user) {
-          saveChat();
-          toast.success('Chat saved');
-          announcePolite('Chat saved');
-        } else {
-          toast.info('Sign in to save chats');
-          announcePolite('Sign in to save chats');
-        }
-      }
-    },
-    {
-      key: '/',
-      ctrl: true,
-      description: 'Focus chat input',
-      action: () => inputRef.current?.focus()
-    },
-    {
-      key: 'Escape',
-      description: 'Stop generating',
-      action: () => {
-        if (isTyping) {
-          stopResponseGeneration();
-        }
-      }
-    },
-    {
-      key: 't',
-      ctrl: true,
-      description: 'Toggle settings',
-      action: () => setShowSettings(!showSettings)
-    }
-  ];
   
   // Theme for chat messages
   const theme = getThemeById(currentTheme);
@@ -759,11 +820,6 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
                     }}
                   />
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-1">Keyboard Shortcuts</label>
-                  <KeyboardShortcuts shortcuts={keyboardShortcuts} />
-                </div>
               </div>
             </div>
           </motion.div>
@@ -796,310 +852,365 @@ const ChatUI = ({ onSaveChat = null, initialMessages = [], chatId = null }) => {
                   whileHover={{ y: -2 }}
                   className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
                   onClick={() => {
-                    setInputText(question);
-                    setTimeout(() => {
-                      adjustTextareaHeight();
-                      inputRef.current?.focus();
-                    }, 0);
-                  }}
-                >
-                  {question}
-                </motion.button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          messages.map((message, index) => {
-            const isUser = message.role === 'user';
-            const isEditing = editingMessage === index;
-            const isAssistantTyping = !isUser && isTyping && assistantMessageIndex === index;
-            const hasAttachment = !!message.attachment;
-            
-            return (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`max-w-[80%] ${isUser ? 'text-right' : 'text-left'}`}>
-                  {/* Message bubble */}
-                  <div 
-                    className={`inline-block rounded-lg p-3 ${
-                      isUser ? theme.userBubble : theme.botBubble
-                    }`}
-                  >
-                    {isEditing ? (
-                      // Editing mode
-                      <div className="flex flex-col space-y-2">
-                        <textarea
-                          value={editedText}
-                          onChange={(e) => setEditedText(e.target.value)}
-                          className="p-2 rounded border dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white min-h-[100px] w-full"
-                          autoFocus
-                        />
-                        <div className="flex justify-end space-x-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={cancelEditing}
-                            aria-label="Cancel edit"
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={saveEdit}
-                            aria-label="Save edit"
-                          >
-                            Save
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      // Regular message display
-                      <div>
-                        {/* If message has an attachment */}
-                        {hasAttachment && (
-                          <div className="border rounded-md p-3 mb-3 bg-gray-50 dark:bg-gray-800">
-                            <div className="flex items-center">
-                              <Paperclip size={18} className="mr-2 text-gray-500" />
-                              <span className="font-medium">{message.attachment.filename}</span>
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">
-                              {(message.attachment.file_size / 1024).toFixed(1)} KB • {message.attachment.mime_type}
-                            </div>
-                            {message.attachment.preview && (
-                              <div className="mt-2 text-sm truncate max-h-20 overflow-hidden text-gray-700 dark:text-gray-300">
-                                <div className="italic">Preview:</div>
-                                {message.attachment.preview}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {/* Message content */}
-                        <div className="message-content">
-                          {isUser 
-                            ? message.content
-                            : parseMarkdown(message.content)}
-                          {isAssistantTyping && (
-                            <span className="inline-block w-2 h-4 bg-gray-500 dark:bg-gray-300 animate-pulse ml-1"></span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Message actions */}
-                  <div className={`flex mt-2 text-xs space-x-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                    <button
-                      onClick={() => copyMessage(message.content)}
-                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                      aria-label="Copy message"
-                    >
-                      <Copy size={14} />
-                    </button>
-                    
-                    {isUser && (
-                      <>
-                        <button
-                          onClick={() => startEditing(index)}
-                          className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                          aria-label="Edit message"
-                        >
-                          <Edit size={14} />
-                        </button>
-                        <button
-                          onClick={() => deleteMessages(index)}
-                          className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                          aria-label="Delete message"
-                        >
-                          <Trash size={14} />
-                        </button>
-                      </>
-                    )}
-                    
-                    {!isUser && (
-                      <button
-                        onClick={() => regenerateResponse(index)}
-                        className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                        aria-label="Regenerate response"
-                      >
-                        <RefreshCw size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })
-        )}
-        
-        {/* Scroll target ref */}
-        <div ref={messagesEndRef} />
-        
-        {/* Scroll to bottom button */}
-        <AnimatePresence>
-          {showScrollToBottom && (
-            <motion.button
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="fixed bottom-20 right-4 bg-purple-600 text-white rounded-full p-2 shadow-lg z-10"
-              onClick={scrollToBottom}
-              aria-label="Scroll to bottom"
-            >
-              <ChevronDown size={24} />
-            </motion.button>
-          )}
-        </AnimatePresence>
-        
-        {/* Only show suggestions when not typing and there are messages */}
-        {!isTyping && messages.length > 0 && (
-          <SuggestedQuestions
-            messages={messages}
-            onSelectQuestion={handleSuggestedQuestion}
-          />
-        )}
-      </div>
-      
-      {/* File upload progress */}
-      {attaching && (
-        <div className="px-4 py-2 bg-blue-50 dark:bg-blue-900/30 border-t border-blue-100 dark:border-blue-800">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Paperclip size={16} className="mr-2 text-blue-500" />
-              <span className="text-sm">{fileToAttach?.name}</span>
-            </div>
-            <span className="text-xs">{attachmentProgress}%</span>
-          </div>
-          <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 mt-1 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-blue-500 rounded-full transition-all duration-300"
-              style={{ width: `${attachmentProgress}%` }}
-            ></div>
-          </div>
-        </div>
-      )}
-      
-      {/* File attachment preview */}
-      {fileToAttach && !attaching && (
-        <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Paperclip size={16} className="mr-2 text-gray-500" />
-              <span className="text-sm font-medium">{fileToAttach.name}</span>
-              <span className="text-xs text-gray-500 ml-2">
-                ({(fileToAttach.size / 1024).toFixed(1)} KB)
-              </span>
-            </div>
-            <div className="flex space-x-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={cancelAttachment}
-                aria-label="Cancel attachment"
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={uploadAttachment}
-                aria-label="Upload attachment"
-              >
-                Upload
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Input area */}
-      <div className="px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex items-center">
-          <div className="flex-1 relative">
-            <textarea
-              ref={inputRef}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="w-full p-3 pr-10 border rounded-lg dark:bg-gray-700 resize-none min-h-[40px] max-h-[160px]"
-              placeholder="Type your message..."
-              disabled={isTyping || isSending || attaching}
-              aria-label="Type your message"
-            />
-            <div className="absolute right-2 bottom-2 flex items-center">
-              <button
-                onClick={openFileDialog}
-                disabled={isTyping || isSending || attaching || fileToAttach}
-                className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
-                aria-label="Attach file"
-              >
-                <Paperclip size={18} />
-              </button>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileSelection}
-                className="hidden"
-                accept=".pdf,.txt,.csv,.xlsx,.jpg,.jpeg,.png,.svg"
-              />
-            </div>
-          </div>
-          
-          <div className="flex items-center ml-2">
-            <VoiceRecorder 
-              onTranscription={(text) => {
-                setInputText(text);
-                adjustTextareaHeight();
-              }}
-              disabled={isTyping || isSending || attaching}
-            />
-            
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mx-1"
-              aria-label="Settings"
-            >
-              <Settings size={20} />
-            </button>
-            
-            {isTyping ? (
-              <Button
-                onClick={stopResponseGeneration}
-                className="ml-2 bg-red-600 hover:bg-red-700"
-                aria-label="Stop generating"
-              >
-                <Square size={18} />
-              </Button>
-            ) : (
-              <Button
-                onClick={() => sendMessage()}
-                className="ml-2"
-                disabled={!inputText.trim() || isSending || attaching}
-                aria-label="Send message"
-              >
-                {isSending ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <Send size={18} />
-                )}
-              </Button>
-            )}
-          </div>
-        </div>
-        
-        {/* Message status */}
-        {isSending && (
-          <div className="text-xs text-gray-500 mt-1 text-right">
-            Sending message...
-          </div>
-        )}
-      </div>
-    </div>
-  );
+                   setInputText(question);
+                   setTimeout(() => {
+                     adjustTextareaHeight();
+                     inputRef.current?.focus();
+                   }, 0);
+                 }}
+               >
+                 {question}
+               </motion.button>
+             ))}
+           </div>
+         </div>
+       ) : (
+         messages.map((msg, index) => {
+           const isUser = msg.role === 'user';
+           const isEditing = editingMessage === index;
+           const isAssistantTyping = !isUser && isTyping && assistantMessageIndex === index;
+           const hasAttachment = !!msg.attachment;
+           
+           // Get branch and regenerated response info
+           const userInput = !isUser ? messages[index - 1]?.content : null;
+           const regenResponses = userInput ? (regeneratedResponses[userInput] || [msg.content]) : [msg.content];
+           const regenIndex = userInput ? (currentRegenIndex[userInput] !== undefined ? currentRegenIndex[userInput] : 0) : 0;
+           const showRegenNav = regenResponses.length > 1;
+           
+           return (
+             <motion.div
+               key={index}
+               initial={{ opacity: 0, y: 10 }}
+               animate={{ opacity: 1, y: 0 }}
+               transition={{ duration: 0.3 }}
+               className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+             >
+               <div className={`max-w-[80%] ${isUser ? 'text-right' : 'text-left'}`}>
+                 {/* Message bubble */}
+                 <div 
+                   className={`inline-block rounded-lg p-3 ${
+                     isUser ? theme.userBubble : theme.botBubble
+                   }`}
+                 >
+                   {isEditing ? (
+                     // Editing mode
+                     <div className="flex flex-col space-y-2">
+                       <textarea
+                         value={editedText}
+                         onChange={(e) => setEditedText(e.target.value)}
+                         className="p-2 rounded border dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white min-h-[100px] w-full"
+                         autoFocus
+                       />
+                       <div className="flex justify-end space-x-2">
+                         <Button
+                           size="sm"
+                           variant="outline"
+                           onClick={cancelEditing}
+                           aria-label="Cancel edit"
+                         >
+                           Cancel
+                         </Button>
+                         <Button
+                           size="sm"
+                           onClick={saveEdit}
+                           aria-label="Save edit"
+                         >
+                           Save
+                         </Button>
+                       </div>
+                     </div>
+                   ) : (
+                     // Regular message display
+                     <div>
+                       {/* If message has an attachment */}
+                       {hasAttachment && (
+                         <div className="border rounded-md p-3 mb-3 bg-gray-50 dark:bg-gray-800">
+                           <div className="flex items-center">
+                             <Paperclip size={18} className="mr-2 text-gray-500" />
+                             <span className="font-medium">{msg.attachment.filename}</span>
+                           </div>
+                           <div className="text-xs text-gray-500 mt-1">
+                             {(msg.attachment.file_size / 1024).toFixed(1)} KB • {msg.attachment.mime_type}
+                           </div>
+                           {msg.attachment.preview && (
+                             <div className="mt-2 text-sm truncate max-h-20 overflow-hidden text-gray-700 dark:text-gray-300">
+                               <div className="italic">Preview:</div>
+                               {msg.attachment.preview}
+                             </div>
+                           )}
+                         </div>
+                       )}
+                       
+                       {/* Message content */}
+                       <div className="message-content">
+                         {isUser 
+                           ? parseUserMarkdown(msg.content)
+                           : parseMarkdown(msg.content)}
+                         {isAssistantTyping && (
+                           <span className="inline-block w-2 h-4 bg-gray-500 dark:bg-gray-300 animate-pulse ml-1"></span>
+                         )}
+                       </div>
+                     </div>
+                   )}
+                 </div>
+                 
+                 {/* Message actions */}
+                 <div className={`flex mt-2 text-xs space-x-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                   <button
+                     onClick={() => copyMessage(msg.content)}
+                     className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                     aria-label="Copy message"
+                   >
+                     <Copy size={14} />
+                   </button>
+                   
+                   {isUser && (
+                     <>
+                       <button
+                         onClick={() => startEditing(index)}
+                         className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                         aria-label="Edit message"
+                       >
+                         <Edit size={14} />
+                       </button>
+                       <button
+                         onClick={() => deleteMessages(index)}
+                         className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                         aria-label="Delete message"
+                       >
+                         <Trash size={14} />
+                       </button>
+                       
+                       {/* Message branch navigation */}
+                       {messageBranches[index] && (
+                         <div className="flex gap-1">
+                           <button
+                             onClick={() => navigateBranch(index, -1)}
+                             disabled={(currentBranchIndex[index] || 0) === 0}
+                             className="p-1 bg-gray-300 dark:bg-gray-600 rounded-full disabled:opacity-50"
+                             aria-label="Previous branch"
+                           >
+                             <ChevronLeft size={14} />
+                           </button>
+                           <button
+                             onClick={() => navigateBranch(index, 1)}
+                             disabled={(currentBranchIndex[index] || 0) === (messageBranches[index]?.length || 0) - 1}
+                             className="p-1 bg-gray-300 dark:bg-gray-600 rounded-full disabled:opacity-50"
+                             aria-label="Next branch"
+                           >
+                             <ChevronRight size={14} />
+                           </button>
+                         </div>
+                       )}
+                     </>
+                   )}
+                   
+                   {!isUser && (
+                     <>
+                       <button
+                         onClick={() => regenerateResponse(index)}
+                         className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                         aria-label="Regenerate response"
+                       >
+                         <RefreshCw size={14} />
+                       </button>
+                       
+                       {/* Regenerated response navigation */}
+                       {showRegenNav && (
+                         <div className="flex gap-1 items-center">
+                           <button
+                             onClick={() => navigateRegeneratedResponse(index, -1)}
+                             disabled={regenIndex === 0}
+                             className="p-1 bg-gray-300 dark:bg-gray-600 rounded-full disabled:opacity-50"
+                             aria-label="Previous response"
+                           >
+                             <ChevronLeft size={14} />
+                           </button>
+                           <span className="text-xs text-gray-500">
+                             {regenIndex + 1}/{regenResponses.length}
+                           </span>
+                           <button
+                             onClick={() => navigateRegeneratedResponse(index, 1)}
+                             disabled={regenIndex === regenResponses.length - 1}
+                             className="p-1 bg-gray-300 dark:bg-gray-600 rounded-full disabled:opacity-50"
+                             aria-label="Next response"
+                           >
+                             <ChevronRight size={14} />
+                           </button>
+                         </div>
+                       )}
+                     </>
+                   )}
+                 </div>
+               </div>
+             </motion.div>
+           );
+         })
+       )}
+       
+       {/* Scroll target ref */}
+       <div ref={messagesEndRef} />
+       
+       {/* Scroll to bottom button */}
+       <AnimatePresence>
+         {showScrollToBottom && (
+           <motion.button
+             initial={{ opacity: 0, y: 10 }}
+             animate={{ opacity: 1, y: 0 }}
+             exit={{ opacity: 0, y: 10 }}
+             className="fixed bottom-20 right-4 bg-purple-600 text-white rounded-full p-2 shadow-lg z-10"
+             onClick={scrollToBottom}
+             aria-label="Scroll to bottom"
+           >
+             <ChevronDown size={24} />
+           </motion.button>
+         )}
+       </AnimatePresence>
+       
+       {/* Only show suggestions when not typing and there are messages */}
+       {!isTyping && messages.length > 0 && (
+         <SuggestedQuestions
+           messages={messages}
+           onSelectQuestion={handleSuggestedQuestion}
+         />
+       )}
+     </div>
+     
+     {/* File upload progress */}
+     {attaching && (
+       <div className="px-4 py-2 bg-blue-50 dark:bg-blue-900/30 border-t border-blue-100 dark:border-blue-800">
+         <div className="flex items-center justify-between">
+           <div className="flex items-center">
+             <Paperclip size={16} className="mr-2 text-blue-500" />
+             <span className="text-sm">{fileToAttach?.name}</span>
+           </div>
+           <span className="text-xs">{attachmentProgress}%</span>
+         </div>
+         <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 mt-1 rounded-full overflow-hidden">
+           <div 
+             className="h-full bg-blue-500 rounded-full transition-all duration-300"
+             style={{ width: `${attachmentProgress}%` }}
+           ></div>
+         </div>
+       </div>
+     )}
+     
+     {/* File attachment preview */}
+     {fileToAttach && !attaching && (
+       <div className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+         <div className="flex items-center justify-between">
+           <div className="flex items-center">
+             <Paperclip size={16} className="mr-2 text-gray-500" />
+             <span className="text-sm font-medium">{fileToAttach.name}</span>
+             <span className="text-xs text-gray-500 ml-2">
+               ({(fileToAttach.size / 1024).toFixed(1)} KB)
+             </span>
+           </div>
+           <div className="flex space-x-2">
+             <Button
+               size="sm"
+               variant="outline"
+               onClick={cancelAttachment}
+               aria-label="Cancel attachment"
+             >
+               Cancel
+             </Button>
+             <Button
+               size="sm"
+               onClick={uploadAttachment}
+               aria-label="Upload attachment"
+             >
+               Upload
+             </Button>
+           </div>
+         </div>
+       </div>
+     )}
+     
+     {/* Input area */}
+     <div className="px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+       <div className="flex items-center">
+         <div className="flex-1 relative">
+           <textarea
+             ref={inputRef}
+             value={inputText}
+             onChange={(e) => setInputText(e.target.value)}
+             onKeyDown={handleKeyDown}
+             className="w-full p-3 pr-10 border rounded-lg dark:bg-gray-700 resize-none min-h-[40px] max-h-[160px]"
+             placeholder="Type your message..."
+             disabled={isTyping || isSending || attaching}
+             aria-label="Type your message"
+           />
+           <div className="absolute right-2 bottom-2 flex items-center">
+             <button
+               onClick={openFileDialog}
+               disabled={isTyping || isSending || attaching || fileToAttach}
+               className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
+               aria-label="Attach file"
+             >
+               <Paperclip size={18} />
+             </button>
+             <input
+               type="file"
+               ref={fileInputRef}
+               onChange={handleFileSelection}
+               className="hidden"
+               accept=".pdf,.txt,.csv,.xlsx,.jpg,.jpeg,.png,.svg"
+             />
+           </div>
+         </div>
+         
+         <div className="flex items-center ml-2">
+           <VoiceRecorder 
+             onTranscription={(text) => {
+               setInputText(text);
+               adjustTextareaHeight();
+             }}
+             disabled={isTyping || isSending || attaching}
+           />
+           
+           <button
+             onClick={() => setShowSettings(!showSettings)}
+             className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mx-1"
+             aria-label="Settings"
+           >
+             <Settings size={20} />
+           </button>
+           
+           {isTyping ? (
+             <Button
+               onClick={stopResponseGeneration}
+               className="ml-2 bg-red-600 hover:bg-red-700"
+               aria-label="Stop generating"
+             >
+               <Square size={18} />
+             </Button>
+           ) : (
+             <Button
+               onClick={() => sendMessage()}
+               className="ml-2"
+               disabled={!inputText.trim() || isSending || attaching}
+               aria-label="Send message"
+             >
+               {isSending ? (
+                 <Loader2 size={18} className="animate-spin" />
+               ) : (
+                 <Send size={18} />
+               )}
+             </Button>
+           )}
+         </div>
+       </div>
+       
+       {/* Message status */}
+       {isSending && (
+         <div className="text-xs text-gray-500 mt-1 text-right">
+           Sending message...
+         </div>
+       )}
+     </div>
+   </div>
+ );
 };
 
 export default ChatUI;
