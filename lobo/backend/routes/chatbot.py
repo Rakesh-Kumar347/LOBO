@@ -1,17 +1,20 @@
+# File: lobo/backend/routes/chatbot.py
 import logging
 from flask import Blueprint, request, jsonify, session
-import ollama
 from config import Config  # Import configuration settings
 from flask_limiter.util import get_remote_address
 from utils.websocket import broadcast_chat_update
 import datetime
-
+from models.chatbot import Chatbot  # Import the Chatbot class
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Initialize Blueprint
 chatbot = Blueprint("chatbot", __name__)
+
+# Initialize chatbot instance
+chatbot_instance = Chatbot()
 
 def is_valid_message(message: str) -> bool:
     """Validates the user's input message."""
@@ -25,10 +28,7 @@ def chatbot_response():
         data = request.json
         user_message = data.get("message", "").strip()
         chat_id = data.get("chat_id")
-
-        # Log the incoming request
-        logging.info(f"Received message: {user_message}")
-
+        
         # Validate input
         if not user_message:
             return jsonify({"error": "Message cannot be empty"}), 400
@@ -42,15 +42,18 @@ def chatbot_response():
 
         # Append user message to history
         chat_history.append({"role": "user", "content": user_message})
-
-        # Get AI response
-        response = ollama.chat(
-            model=Config.OLLAMA_MODEL,
-            messages=chat_history  # Passing history for better contextual responses
+        
+        # Generate AI response using the Chatbot class
+        temperature = 0.7  # Default value, could be customized
+        max_tokens = 512  # Default value, could be customized
+        bot_response = chatbot_instance.generate_response(
+            user_message, 
+            temperature=temperature, 
+            max_tokens=max_tokens
         )
-
-        # Ensure response is extracted correctly
-        bot_response = response.get("message", {}).get("content", "Sorry, I couldn't generate a response.")
+        
+        if bot_response is None:
+            bot_response = "Sorry, I couldn't generate a response."
 
         # Log the response
         logging.info(f"Generated response: {bot_response}")
@@ -67,7 +70,7 @@ def chatbot_response():
                 "message": {
                     "role": "assistant",
                     "content": bot_response,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.datetime.utcnow().isoformat()
                 }
             })
 

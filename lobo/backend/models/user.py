@@ -1,67 +1,88 @@
+# File: lobo/backend/models/user.py
 import logging
 from typing import Dict, Optional
-from werkzeug.security import generate_password_hash, check_password_hash
-from utils.database import users_collection
+from utils.database import supabase
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class User:
-    """Handles user authentication and management.
+    """Handles user authentication and management with Supabase.
 
     Methods:
-        create_user: Creates a new user with a hashed password.
-        verify_user: Verifies user credentials.
+        create_user: Creates a new user with Supabase Auth.
+        verify_user: Verifies user credentials with Supabase Auth.
     """
 
     @staticmethod
-    def create_user(username: str, password: str) -> Dict[str, str]:
+    def create_user(email: str, password: str, full_name: str = "") -> Dict[str, str]:
         """
-        Creates a new user with a hashed password.
+        Creates a new user with Supabase Auth.
 
         Args:
-            username (str): The desired username.
-            password (str): The plaintext password.
+            email (str): User email.
+            password (str): User password.
+            full_name (str): User's full name.
 
         Returns:
             Dict[str, str]: A dictionary with success or error message.
         """
         try:
             # Validate input
-            if len(username) < 3 or len(password) < 8:
-                return {"success": False, "message": "Username must be at least 3 characters and password at least 8 characters."}
+            if len(email) < 5 or len(password) < 8:
+                return {
+                    "success": False, 
+                    "message": "Email must be valid and password at least 8 characters."
+                }
 
-            # Check if user already exists
-            if users_collection.find_one({"username": username}):
-                return {"success": False, "message": "Username already exists."}
-
-            # Hash password and create user
-            hashed_password = generate_password_hash(password)
-            users_collection.insert_one({"username": username, "password": hashed_password})
+            # Create user with Supabase
+            result = supabase.auth.sign_up({
+                "email": email,
+                "password": password,
+                "options": {
+                    "data": {
+                        "full_name": full_name
+                    }
+                }
+            })
+            
+            if result.error:
+                return {"success": False, "message": result.error.message}
+                
             return {"success": True, "message": "User created successfully."}
 
         except Exception as e:
-            logging.error(f"Error creating user '{username}': {str(e)}")
+            logging.error(f"Error creating user '{email}': {str(e)}")
             return {"success": False, "message": "An error occurred while creating the user."}
 
     @staticmethod
-    def verify_user(username: str, password: str) -> Dict[str, str]:
+    def verify_user(email: str, password: str) -> Dict[str, str]:
         """
-        Verifies user credentials.
+        Verifies user credentials with Supabase Auth.
 
         Args:
-            username (str): The username.
-            password (str): The plaintext password.
+            email (str): User email.
+            password (str): User password.
 
         Returns:
             Dict[str, str]: A dictionary with verification status.
         """
         try:
-            user = users_collection.find_one({"username": username})
-            if user and check_password_hash(user["password"], password):
-                return {"success": True, "message": "Login successful.", "user": user}
-            return {"success": False, "message": "Invalid username or password."}
+            result = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            if result.error:
+                return {"success": False, "message": "Invalid email or password."}
+                
+            return {
+                "success": True, 
+                "message": "Login successful.", 
+                "user": result.user,
+                "session": result.session
+            }
 
         except Exception as e:
-            logging.error(f"Error verifying user '{username}': {str(e)}")
+            logging.error(f"Error verifying user '{email}': {str(e)}")
             return {"success": False, "message": "An error occurred while verifying the user."}

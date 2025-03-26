@@ -17,6 +17,7 @@ from middleware.csrf_middleware import csrf_protect
 from middleware.rate_limiter import tier_limit_decorator, subscription_required
 from utils.api_response import success_response, error_response
 from utils.cache import cache_response, invalidate_user_cache
+from utils.file_processors import process_pdf, process_text_file, process_csv, process_excel
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -264,6 +265,9 @@ def get_allowed_file_types(user_id):
         # Check if premium formats should be included
         include_premium = user_tier in ['premium', 'enterprise']
         
+        # Get maximum file size
+        MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # Default 10MB
+        
         file_types = {}
         for ext, mime in ALLOWED_EXTENSIONS.items():
             # Skip premium formats for free/standard users
@@ -302,123 +306,6 @@ def get_allowed_file_types(user_id):
             exc=e
         )
 
-# Helper functions for different file types
-def process_pdf(file_path):
-    """Extract text from a PDF file and return additional information."""
-    try:
-        text = ""
-        page_count = 0
-        with fitz.open(file_path) as doc:
-            page_count = len(doc)
-            for page in doc:
-                text += page.get_text("text") + "\n"
-                
-        return text.strip(), {
-            "page_count": page_count,
-            "word_count": len(text.split()),
-            "char_count": len(text)
-        }
-    except Exception as e:
-        logging.error(f"Error extracting text from PDF: {str(e)}")
-        return None, None
-
-def process_text_file(file_path):
-    """Process a text file."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        return content, {
-            "line_count": content.count('\n') + 1,
-            "word_count": len(content.split()),
-            "char_count": len(content)
-        }
-    except UnicodeDecodeError:
-        # Try with different encoding
-        try:
-            with open(file_path, 'r', encoding='latin-1') as f:
-                content = f.read()
-            
-            return content, {
-                "line_count": content.count('\n') + 1,
-                "word_count": len(content.split()),
-                "char_count": len(content)
-            }
-        except Exception as e:
-            logging.error(f"Error processing text file: {str(e)}")
-            return None, None
-    except Exception as e:
-        logging.error(f"Error processing text file: {str(e)}")
-        return None, None
-
-def process_csv(file_path):
-    """Process a CSV file and extract key information."""
-    try:
-        df = pd.read_csv(file_path)
-        
-        # Generate a text representation of the CSV
-        text = f"CSV file with {len(df.columns)} columns and {len(df)} rows.\n"
-        text += f"Columns: {', '.join(df.columns)}\n\n"
-        
-        # Add sample of data
-        sample_size = min(5, len(df))
-        if sample_size > 0:
-            text += "Sample data:\n"
-            text += df.head(sample_size).to_string() + "\n"
-        
-        # Add statistics for numeric columns
-        numeric_cols = df.select_dtypes(include=['number']).columns
-        if len(numeric_cols) > 0:
-            text += "\nNumeric column statistics:\n"
-            for col in numeric_cols:
-                text += f"{col}: min={df[col].min()}, max={df[col].max()}, mean={df[col].mean()}\n"
-        
-        return text, {
-            "row_count": len(df),
-            "column_count": len(df.columns),
-            "columns": df.columns.tolist(),
-            "data_types": {col: str(df[col].dtype) for col in df.columns}
-        }
-    except Exception as e:
-        logging.error(f"Error processing CSV file: {str(e)}")
-        return None, None
-
-def process_excel(file_path):
-    """Process an Excel file and extract key information."""
-    try:
-        # Read all sheets
-        excel_file = pd.ExcelFile(file_path)
-        sheet_names = excel_file.sheet_names
-        
-        text = f"Excel file with {len(sheet_names)} sheets: {', '.join(sheet_names)}\n\n"
-        
-        all_data = {}
-        for sheet in sheet_names:
-            df = pd.read_excel(file_path, sheet_name=sheet)
-            all_data[sheet] = {
-                "row_count": len(df),
-                "column_count": len(df.columns),
-                "columns": df.columns.tolist()
-            }
-            
-            # Add sheet details to text
-            text += f"Sheet: {sheet}\n"
-            text += f"  Rows: {len(df)}, Columns: {len(df.columns)}\n"
-            text += f"  Column names: {', '.join(df.columns)}\n\n"
-            
-            # Add sample if sheet has data
-            if len(df) > 0:
-                sample_size = min(3, len(df))
-                text += f"  Sample data:\n{df.head(sample_size).to_string()}\n\n"
-        
-        return text, {
-            "sheet_count": len(sheet_names),
-            "sheets": all_data
-        }
-    except Exception as e:
-        logging.error(f"Error processing Excel file: {str(e)}")
-        return None, None
-    
 # New endpoint to check file processing status
 @files_bp.route("/status/<file_id>", methods=["GET"])
 @auth_required
@@ -461,6 +348,120 @@ def get_file_status(user_id, file_id):
         logging.error(f"Error retrieving file status: {str(e)}")
         return error_response(
             message="An error occurred while retrieving file status",
+            status_code=500,
+            exc=e
+        )
+
+@files_bp.route("/process/<file_id>", methods=["POST"])
+@auth_required
+@csrf_protect
+def process_file_manually(user_id, file_id):
+    """
+    Trigger manual processing of a file.
+    """
+    try:
+        # Check if user has access to file
+        success, file_data = get_file_by_id(file_id)
+        if not success:
+            return error_response(
+                message="File not found",
+                status_code=404
+            )
+            
+        # Verify file ownership
+        if file_data.get("user_id") != user_id:
+            return error_response(
+                message="Unauthorized",
+                status_code=403
+            )
+            
+        # Check if file is already processing
+        if file_data.get("processing_status") == "PROCESSING":
+            return error_response(
+                message="File is already being processed",
+                status_code=400
+            )
+            
+        # Get file details
+        metadata = file_data.get("metadata", {})
+        file_path = metadata.get("file_path")
+        mime_type = metadata.get("mime_type")
+        
+        if not file_path or not os.path.exists(file_path):
+            return error_response(
+                message="File not found on server",
+                status_code=404
+            )
+            
+        # Update status to processing
+        supabase.table("files").update({
+            "processing_status": "PROCESSING",
+            "processing_progress": 0,
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        }).eq("id", file_id).execute()
+        
+        # Trigger asynchronous processing
+        from utils.tasks import process_file
+        task = process_file.delay(file_id, file_path, mime_type, user_id)
+        
+        return success_response(
+            data={"task_id": task.id},
+            message="File processing triggered successfully"
+        )
+            
+    except Exception as e:
+        logging.error(f"Error triggering file processing: {str(e)}")
+        return error_response(
+            message="An error occurred while triggering file processing",
+            status_code=500,
+            exc=e
+        )
+
+@files_bp.route("/search", methods=["GET"])
+@auth_required
+@csrf_protect
+@subscription_required
+def search_files(user_id):
+    """
+    Search files using vector similarity.
+    """
+    try:
+        # Get query parameter
+        query = request.args.get('query', '')
+        if not query:
+            return error_response(
+                message="Query parameter is required",
+                status_code=400
+            )
+            
+        # Search vectors
+        from utils.vector_db import search_vectors
+        results = search_vectors(query, top_k=5)
+        
+        # Extract file IDs from results
+        file_ids = [result.get("metadata", {}).get("file_id") for result in results if result.get("metadata", {}).get("file_id")]
+        
+        # Get file details for the results
+        file_details = []
+        for file_id in file_ids:
+            success, file_data = get_file_by_id(file_id)
+            if success and file_data.get("user_id") == user_id:
+                file_details.append({
+                    "id": file_data.get("id"),
+                    "original_filename": file_data.get("original_filename"),
+                    "mime_type": file_data.get("mime_type"),
+                    "relevance_score": next((r.get("score") for r in results if r.get("metadata", {}).get("file_id") == file_id), 0)
+                })
+        
+        return success_response(
+            data={"results": file_details},
+            message=f"Found {len(file_details)} files matching your query"
+        )
+            
+    except Exception as e:
+        logging.error(f"Error searching files: {str(e)}")
+        return error_response(
+            message="An error occurred while searching files",
             status_code=500,
             exc=e
         )
